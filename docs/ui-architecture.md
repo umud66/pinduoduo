@@ -14,7 +14,8 @@ frontend/src/
 │   ├── diagnosis/   确定性诊断展示
 │   ├── insights/    趋势、同商品静态对比
 │   ├── decision/    变化点、结构迁移、action_priority
-│   └── optimization/优化任务、执行记录、复盘时间线
+│   ├── optimization/优化任务、执行记录、复盘时间线
+│   └── settings/    拼多多应用/店铺授权等复杂设置域
 ├── layouts/         页面骨架
 ├── router/          路由
 ├── stores/          跨页面共享状态
@@ -34,42 +35,44 @@ frontend/src/
 - `stores/`：只保存跨页面共享状态。
 - `router/`：主路由和元信息。
 
-SKU 详情当前组合：
+SKU 详情继续按决策、趋势、诊断、优化任务拆分，不在 Drawer 中重复实现算法。
+
+设置页当前拆分：
 
 ```text
-SkuDrawer.vue
-├── components/decision/DecisionSupportPanel.vue
-├── components/insights/SkuTrendPanel.vue
-├── components/insights/PeerComparison.vue
-├── components/diagnosis/DiagnosisPanel.vue
-└── components/optimization/CreateOptimizationTask.vue
+SettingsView.vue
+├── 店铺基本信息
+├── components/settings/PddAuthorizationSettings.vue
+└── AI Provider 管理
 ```
 
-优化闭环：
+`PddAuthorizationSettings.vue` 负责：
 
 ```text
-views/OptimizationTasksView.vue
-└── components/optimization/
-    ├── TaskCard.vue               单条任务状态与操作
-    └── ReviewTimeline.vue         3/7/14 日复盘
-
-SkuDrawer.vue
-└── CreateOptimizationTask.vue     从诊断动作创建任务
+开放平台应用 Client ID/Secret/redirect_uri
+→ 发起店铺授权
+→ 授权状态轮询
+→ 本地 callback / 手工 code 开发兜底
+→ refresh
+→ capability probe
+→ 断开本机授权
 ```
 
-领域样式分别使用 `styles/decision-support.css`、`styles/optimization.css`，不继续向全局 `app.css` 无限追加。
+普通商家 UI 不再显示“手工填写 Access Token”。
 
-## 业务计算边界
+领域样式分别使用 `styles/decision-support.css`、`styles/optimization.css`、`styles/pdd-auth.css`，不继续向全局 `app.css` 无限追加。
 
-Vue 不实现诊断、趋势、决策和复盘公式。
+## 业务与安全边界
+
+Vue 不实现诊断、趋势、决策、复盘或 OAuth Token 交换算法。
 
 ```text
-Python 服务统一计算
-→ API 返回结构化结果
-→ Vue 负责展示、选择动作、记录执行内容和状态操作
+Python 服务统一计算 / 交换 Token
+→ API 只返回脱敏结构化状态
+→ Vue 负责展示和用户交互
 ```
 
-优化任务页面可以触发 `start / complete / cancel / refresh`，但不得自行计算执行前后指标、`effect_score` 或复盘 `outcome`。
+Access Token、Refresh Token、Client Secret 不得从 API 回显到 Vue。
 
 ## 构建与运行
 
@@ -84,8 +87,9 @@ Python 服务统一计算
 3. API 调用必须放 `src/api/`。
 4. 跨页面共享状态才进入 Pinia。
 5. 业务公式只能由后端服务实现，Vue 不复制算法。
-6. 优化任务、执行记录、复盘 UI 统一放 `components/optimization/`，不要堆回 SKU Drawer。
-7. 领域样式明显增长时拆独立 CSS，禁止重新形成一个超大 `app.css`。
-8. 不要求最终用户安装 Node.js。
-9. 修改前端依赖、Vite 输出、SPA fallback 或 PyInstaller 静态路径时必须同时验证 Release workflow。
-10. UI 架构或组件职责变化必须在同一大功能提交中更新本文。
+6. 拼多多授权 UI 放 `components/settings/`，不得回退成 SettingsView 内的一大段表单逻辑。
+7. 普通商家流程不得要求手工 Access Token；手工 code 只能放开发兜底区域。
+8. 领域样式明显增长时拆独立 CSS，禁止重新形成一个超大 `app.css`。
+9. 不要求最终用户安装 Node.js。
+10. 修改前端依赖、Vite 输出、SPA fallback 或 PyInstaller 静态路径时必须同时验证 Release workflow。
+11. UI 架构或组件职责变化必须在同一大功能提交中更新本文。

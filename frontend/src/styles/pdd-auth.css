@@ -1,0 +1,6 @@
+
+.pdd-auth-card{display:grid;gap:12px}.auth-status-panel,.auth-start-panel{border:1px solid #e7e9ed;border-radius:12px;padding:14px;background:#fafbfc}
+.auth-status-panel{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.auth-status-panel>div{display:grid;gap:4px}.auth-status-panel .full{grid-column:1/-1}
+.auth-status-panel small{color:#7a8089}.manual-code-box{margin-top:12px}.manual-code-box input{margin:10px 0}.auth-start-panel{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.auth-start-panel p{flex-basis:100%;margin:0}.pdd-auth-card details.field summary{cursor:pointer;color:#666}.pdd-auth-card .probe-list{margin-top:4px}
+@media(max-width:900px){.auth-status-panel{grid-template-columns:1fr}}

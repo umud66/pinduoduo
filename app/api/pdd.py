@@ -6,19 +6,19 @@ from pydantic import BaseModel, Field
 from app.core.secrets import SecretStore
 from app.db.database import session_scope
 from app.db.models import Shop
+from app.services.pdd.auth import PddAuthorizationService
 from app.services.pdd.client import PddClient, PddCredentials
 from app.services.pdd.probe import PddCapabilityProbe
 
 router = APIRouter(tags=["pdd"])
 secret_store = SecretStore()
-
+auth_service = PddAuthorizationService(secret_store=secret_store)
 
 class PddProbeRequest(BaseModel):
     client_id: str = Field(min_length=1)
     client_secret: str = Field(min_length=1)
     access_token: str | None = None
     gateway_url: str | None = None
-
 
 def _report_payload(report) -> dict[str, object]:
     return {
@@ -35,9 +35,9 @@ def _report_payload(report) -> dict[str, object]:
         ],
     }
 
-
 @router.post("/pdd/probe")
 def probe_pdd(payload: PddProbeRequest) -> dict[str, object]:
+    """Advanced/development probe. Merchant UI should use saved-shop authorization."""
     try:
         client = PddClient(
             PddCredentials(
@@ -51,15 +51,18 @@ def probe_pdd(payload: PddProbeRequest) -> dict[str, object]:
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-
 @router.post("/pdd/shops/{shop_id}/probe")
 def probe_saved_shop(shop_id: int) -> dict[str, object]:
     with session_scope() as session:
         shop = session.get(Shop, shop_id)
         if shop is None:
             raise HTTPException(status_code=404, detail="店铺不存在")
-        if not shop.client_id or not shop.client_secret_encrypted:
-            raise HTTPException(status_code=400, detail="请先在设置中填写 Client ID 和 Client Secret")
+        auth = auth_service.authorization(session, shop_id)
+        if auth is not None and auth.status != "authorized":
+            raise HTTPException(status_code=400, detail="拼多多店铺尚未完成有效授权，请重新绑定")
+        # Legacy credentials remain a development/backward-compatibility fallback.
+        if not shop.client_id or not shop.client_secret_encrypted or not shop.access_token_encrypted:
+            raise HTTPException(status_code=400, detail="请先通过拼多多官方授权页绑定店铺")
         try:
             credentials = PddCredentials(
                 client_id=shop.client_id,
