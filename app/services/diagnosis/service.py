@@ -6,7 +6,13 @@ from sqlalchemy import select
 
 from app.db.database import session_scope
 from app.db.models import DiagnosisResult, SkuDailyMetric
-from app.services.diagnosis.engine import MetricSnapshot, average_snapshots, diagnose, number
+from app.services.diagnosis.engine import (
+    MetricSnapshot,
+    average_snapshots,
+    diagnose,
+    number,
+    snapshot_payload,
+)
 
 
 def metric_to_snapshot(metric: SkuDailyMetric) -> MetricSnapshot:
@@ -21,7 +27,10 @@ def metric_to_snapshot(metric: SkuDailyMetric) -> MetricSnapshot:
         visitors=number(metric.visitors),
         stock=number(metric.stock),
         ad_cost=number(metric.ad_cost),
+        ad_clicks=number(metric.ad_clicks),
+        ad_orders=number(metric.ad_orders),
         ad_gmv=number(metric.ad_gmv),
+        price=number(metric.price),
     )
 
 
@@ -37,14 +46,19 @@ def diagnose_latest_sku(sku_id: int) -> dict[str, object]:
             raise LookupError("该 SKU 暂无每日指标数据")
 
         current_metric = metrics[0]
+        baseline_items = [metric_to_snapshot(m) for m in metrics[1:]]
         current = metric_to_snapshot(current_metric)
-        baseline = average_snapshots(metric_to_snapshot(m) for m in metrics[1:])
-        result = diagnose(current, baseline)
+        baseline = average_snapshots(baseline_items)
+        baseline_days = len(baseline_items)
+        result = diagnose(current, baseline, baseline_days=baseline_days)
+
         payload = result.as_dict()
         payload["sku_id"] = sku_id
         payload["period_end"] = current_metric.metric_date.isoformat()
-        payload["baseline_days"] = len(metrics[1:])
-        diagnosis_json = json.dumps(payload, ensure_ascii=False)
+        payload["baseline_days"] = baseline_days
+        payload["current"] = snapshot_payload(current)
+        payload["baseline"] = snapshot_payload(baseline)
+        diagnosis_json = json.dumps(payload, ensure_ascii=False, sort_keys=True)
 
         stored = session.scalar(
             select(DiagnosisResult)
@@ -89,10 +103,20 @@ def diagnose_shop_skus(shop_id: int, *, limit: int = 2000) -> dict[str, object]:
     success = 0
     skipped = 0
     errors: list[dict[str, object]] = []
+    high = medium = low = healthy = 0
     for sku_id in sku_ids:
         try:
-            diagnose_latest_sku(int(sku_id))
+            result = diagnose_latest_sku(int(sku_id))
             success += 1
+            severity = str(result.get("severity") or "healthy")
+            if severity == "high":
+                high += 1
+            elif severity == "medium":
+                medium += 1
+            elif severity == "low":
+                low += 1
+            else:
+                healthy += 1
         except LookupError:
             skipped += 1
         except Exception as exc:
@@ -103,13 +127,22 @@ def diagnose_shop_skus(shop_id: int, *, limit: int = 2000) -> dict[str, object]:
         "total": len(sku_ids),
         "success": success,
         "skipped": skipped,
+        "severity_counts": {
+            "high": high,
+            "medium": medium,
+            "low": low,
+            "healthy": healthy,
+        },
         "errors": errors[:20],
     }
 
 
 def build_ai_context(diagnosis_payload: dict[str, object]) -> str:
     return (
-        "你是电商运营诊断助手。下面的数据已经由程序完成计算，请不要修改指标或虚构缺失数据。"
-        "只根据给定问题提出按优先级排序、可执行、可验证的优化动作；缺少曝光/点击等数据时要明确说明。\n\n"
+        "你是拼多多电商运营诊断助手。下面的数据、漏斗拆解、影响度、置信度和优先级已经由程序计算。"
+        "不得修改指标、不得虚构缺失数据、不得把相关性描述成确定因果。"
+        "优先围绕 priority_score 最高的问题提出动作。"
+        "输出中文：先给一句经营结论，再给最多 5 条动作；每条必须包含动作、为什么、验证指标、观察周期。"
+        "如果 data_quality.confidence 较低，要先明确需要补充的数据。\n\n"
         + json.dumps(diagnosis_payload, ensure_ascii=False, indent=2)
     )

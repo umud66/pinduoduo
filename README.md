@@ -70,6 +70,9 @@ python scripts/dev.py
 
 - [`docs/product-discussion.md`](docs/product-discussion.md)：项目启动阶段的产品与技术讨论纪要，记录关键架构决策、约束、风险和演进方向。
 - [`docs/functional-spec.md`](docs/functional-spec.md)：详细功能说明书，描述模块、流程、数据、验收标准和版本路线。
+- [`docs/diagnosis-engine.md`](docs/diagnosis-engine.md)：SKU 诊断引擎、GMV 拆解、影响度、置信度、优先级和验证动作设计。
+- [`docs/pdd-sync.md`](docs/pdd-sync.md)：拼多多商品、订单、售后同步策略及恢复机制。
+- [`docs/ui-architecture.md`](docs/ui-architecture.md)：前端模块化结构与约束。
 - [`docs/architecture.md`](docs/architecture.md)：系统总体架构。
 - [`docs/deployment.md`](docs/deployment.md)：本地部署原则。
 - [`docs/release.md`](docs/release.md)：Windows Release 发布流程。
