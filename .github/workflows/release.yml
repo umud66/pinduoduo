@@ -1,4 +1,4 @@
-name: Release Windows
+name: Release Multi-platform
 
 on:
   push:
@@ -20,14 +20,11 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  windows-release:
-    name: Build and publish Windows release
-    runs-on: windows-latest
-    env:
-      PYTHONUTF8: "1"
-      PIP_DISABLE_PIP_VERSION_CHECK: "1"
-      GH_TOKEN: ${{ github.token }}
-
+  prepare:
+    name: Prepare release
+    runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
@@ -36,29 +33,51 @@ jobs:
 
       - name: Resolve release tag
         id: release
-        shell: pwsh
+        shell: bash
         run: |
-          if ("${{ github.event_name }}" -eq "workflow_dispatch") { $rawTag = "${{ inputs.tag }}" } else { $rawTag = "${{ github.ref_name }}" }
-          $rawTag = $rawTag.Trim()
-          if ($rawTag -notmatch '^v?[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$') {
-            throw "Invalid release version '$rawTag'. Expected MAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH, optionally with a suffix."
-          }
-          if ($rawTag.StartsWith("v")) { $tag = $rawTag } else { $tag = "v$rawTag" }
-          "tag=$tag" >> $env:GITHUB_OUTPUT
-          "archive=PDD-AI-Operator-$tag-windows-x64.zip" >> $env:GITHUB_OUTPUT
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            raw_tag="${{ inputs.tag }}"
+          else
+            raw_tag="${{ github.ref_name }}"
+          fi
 
-      - name: Ensure tag exists for manual release
-        if: github.event_name == 'workflow_dispatch'
-        shell: pwsh
+          raw_tag="$(echo "$raw_tag" | xargs)"
+          if [[ ! "$raw_tag" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$ ]]; then
+            echo "Invalid release version '$raw_tag'. Expected MAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH, optionally with a suffix." >&2
+            exit 1
+          fi
+
+          if [[ "$raw_tag" == v* ]]; then
+            tag="$raw_tag"
+          else
+            tag="v$raw_tag"
+          fi
+
+          echo "Normalized release tag: $tag"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Ensure normalized tag exists
+        shell: bash
         run: |
-          $tag = "${{ steps.release.outputs.tag }}"
+          tag="${{ steps.release.outputs.tag }}"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          $existingTag = git ls-remote --tags origin "refs/tags/$tag"
-          if (-not $existingTag) {
-            git tag -a $tag "${{ github.sha }}" -m "Release $tag"
+
+          if ! git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
+            git tag -a "$tag" "${{ github.sha }}" -m "Release $tag"
             git push origin "refs/tags/$tag"
-          }
+          fi
+
+  quality:
+    name: Test Python and Vue
+    needs: prepare
+    runs-on: ubuntu-24.04
+    env:
+      PYTHONUTF8: "1"
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -72,45 +91,166 @@ jobs:
           node-version: "22"
 
       - name: Install Python dependencies
-        shell: pwsh
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e ".[dev]"
 
       - name: Run Python tests
-        shell: pwsh
-        run: python -m pytest -q
+        run: |
+          python -m compileall -q app scripts tests
+          python -m pytest -q
+
+      - name: Build Vue frontend
+        working-directory: frontend
+        run: |
+          npm install --no-audit --no-fund
+          npm run build
+
+      - name: Verify frontend output
+        run: test -f app/static/index.html
+
+  build:
+    name: Build ${{ matrix.label }}
+    needs: [prepare, quality]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: Windows x64
+            runner: windows-2025
+            platform: windows
+            arch: x64
+            artifact: windows-x64
+          - label: Linux x64
+            runner: ubuntu-24.04
+            platform: linux
+            arch: x64
+            artifact: linux-x64
+          - label: macOS Apple Silicon
+            runner: macos-15
+            platform: macos
+            arch: arm64
+            artifact: macos-arm64
+          - label: macOS Intel
+            runner: macos-15-intel
+            platform: macos
+            arch: x64
+            artifact: macos-x64
+
+    runs-on: ${{ matrix.runner }}
+    env:
+      PYTHONUTF8: "1"
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+          python -m compileall -q app scripts
 
       - name: Build Windows application
+        if: matrix.platform == 'windows'
         shell: pwsh
         run: ./scripts/build_windows.ps1 -SkipInstall
 
-      - name: Verify Vue build output
-        shell: pwsh
-        run: |
-          if (-not (Test-Path "app/static/index.html")) { throw "Vue build output missing: app/static/index.html" }
-          if (-not (Test-Path "dist/PDD运营助手")) { throw "PyInstaller output missing" }
+      - name: Build Unix application
+        if: matrix.platform != 'windows'
+        shell: bash
+        run: ./scripts/build_unix.sh --skip-install
 
-      - name: Package release files
+      - name: Package Windows asset
+        if: matrix.platform == 'windows'
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path release | Out-Null
-          $archive = "${{ steps.release.outputs.archive }}"
+          $tag = "${{ needs.prepare.outputs.tag }}"
+          $archive = "PDD-AI-Operator-$tag-${{ matrix.artifact }}.zip"
           Compress-Archive -Path "dist/PDD运营助手/*" -DestinationPath "release/$archive" -CompressionLevel Optimal
           $hash = (Get-FileHash "release/$archive" -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash *$archive" | Set-Content -Encoding ascii "release/$archive.sha256"
 
-      - name: Create or update GitHub Release
-        shell: pwsh
+      - name: Package Linux asset
+        if: matrix.platform == 'linux'
+        shell: bash
         run: |
-          $tag = "${{ steps.release.outputs.tag }}"
-          $archive = "${{ steps.release.outputs.archive }}"
-          $isPrerelease = $tag.Contains("-")
-          $releaseExists = $false
-          try { gh release view $tag *> $null; $releaseExists = ($LASTEXITCODE -eq 0) } catch { $releaseExists = $false }
-          if (-not $releaseExists) {
-            $ghArgs = @("release", "create", $tag, "--title", "PDD AI Operator $tag", "--generate-notes", "--target", "${{ github.sha }}")
-            if ($isPrerelease) { $ghArgs += "--prerelease" }
-            gh @ghArgs
-          }
-          gh release upload $tag "release/$archive" "release/$archive.sha256" --clobber
+          mkdir -p release
+          tag="${{ needs.prepare.outputs.tag }}"
+          archive="PDD-AI-Operator-$tag-${{ matrix.artifact }}.tar.gz"
+          tar -C dist -czf "release/$archive" PDD-AI-Operator
+          sha256sum "release/$archive" | sed 's#release/##' > "release/$archive.sha256"
+
+      - name: Package macOS asset
+        if: matrix.platform == 'macos'
+        shell: bash
+        run: |
+          mkdir -p release
+          tag="${{ needs.prepare.outputs.tag }}"
+          archive="PDD-AI-Operator-$tag-${{ matrix.artifact }}.zip"
+          test -d "dist/PDD运营助手.app"
+          ditto -c -k --sequesterRsrc --keepParent "dist/PDD运营助手.app" "release/$archive"
+          (cd release && shasum -a 256 "$archive" > "$archive.sha256")
+
+      - name: Upload platform asset
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.artifact }}
+          path: release/*
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Publish GitHub Release
+    needs: [prepare, build]
+    runs-on: ubuntu-24.04
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+
+    steps:
+      - name: Download platform assets
+        uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: release
+          merge-multiple: true
+
+      - name: Create combined checksum manifest
+        shell: bash
+        run: |
+          cd release
+          sha256sum *.zip *.tar.gz > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Create or update GitHub Release
+        shell: bash
+        run: |
+          tag="${{ needs.prepare.outputs.tag }}"
+          prerelease_args=()
+          if [[ "$tag" == *-* ]]; then
+            prerelease_args+=(--prerelease)
+          fi
+
+          if ! gh release view "$tag" >/dev/null 2>&1; then
+            gh release create "$tag" \
+              --verify-tag \
+              --title "PDD AI Operator $tag" \
+              --generate-notes \
+              "${prerelease_args[@]}"
+          fi
+
+          gh release upload "$tag" release/* --clobber

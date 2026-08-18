@@ -4,12 +4,13 @@
 
 ## 1. 产品与部署目标
 
-- 本地优先，默认 Windows 普通用户。
+- 本地优先，面向非技术商家。
+- 正式发布支持 Windows、macOS、Linux。
 - SQLite 默认存储，不要求 PostgreSQL、Redis、Docker。
 - 拼多多 API 与报表导入并存。
 - SKU 诊断由程序确定性计算，LLM 负责解释和补充建议。
 - 支持 OpenAI-Compatible 中转站以及其他 Provider。
-- 正式用户路径必须保持：`下载 -> 双击 exe -> 浏览器打开 -> 配置 -> 使用`。
+- 正式用户路径必须保持：`下载 -> 解压/打开应用 -> 浏览器打开 -> 配置 -> 使用`。
 - 开发环境允许 Python/Node.js，但正式发布包不得要求最终用户安装它们。
 
 ## 2. 后端架构边界
@@ -19,12 +20,16 @@
 - `app/services/diagnosis/`：确定性诊断，缺失数据保持 `None/unknown`。
 - `app/services/ai/`：所有模型调用经 Provider/Gateway。
 
-## 3. SQLite 规则
+## 3. SQLite 与运行数据规则
 
-- 默认数据库 `data/app.db`。
+- 数据目录由 `app/core/paths.py` 按运行环境解析。
+- 源码开发默认 `data/`。
+- Windows 冻结版保持 `<exe>/data/` 便携目录。
+- macOS 冻结版默认 `~/Library/Application Support/PDD AI Operator/`。
+- Linux 冻结版默认 `$XDG_DATA_HOME/pdd-ai-operator/`，无 XDG 时使用 `~/.local/share/pdd-ai-operator/`。
+- `PDD_AI_DATA_DIR` 可以显式覆盖。
+- 数据库和 `secret.key` 必须一起备份。
 - 保持 WAL、foreign_keys、busy_timeout。
-- 写任务尽量短事务、批量写。
-- 关键查询建立 `shop/date`、`sku/date` 等索引。
 - schema 变化在正式发布前必须 migration，不能要求用户删库重建。
 
 ## 4. 拼多多 API 规则
@@ -58,12 +63,21 @@ API Key 加密落库；消费者姓名、电话、地址默认不发送 AI；AI 
 
 后端至少运行：`python -m compileall app scripts tests` 与 `pytest`。前端至少运行：`npm install/npm ci` 与 `npm run build`。无法执行必须明确记录环境限制，不得声称通过。
 
+涉及 Release/平台的改动必须通过原生 GitHub Runner 验证对应 PyInstaller 构建。不能用一个平台的本地构建结果声称另一个平台已经可发布。
+
 ## 9. Release 规则
 
-- 正式 Windows Release 统一由 `.github/workflows/release.yml` 构建。
-- Release 必须运行 Python 测试、Vue build、PyInstaller。
-- `scripts/build_windows.ps1` 是 Vue build + PyInstaller 的统一入口。
-- 修改 Vite 输出、静态目录、FastAPI fallback、PyInstaller、Node/Python 版本时必须同步检查 Release Action。
+- 正式 Release 统一由 `.github/workflows/release.yml` 构建。
+- 当前稳定矩阵：Windows x64、Linux x64、macOS arm64、macOS Intel x64。
+- Runner 应使用明确的平台/架构标签；修改 Runner 时先核对 GitHub 官方当前支持状态。
+- Release 必须先运行 Python 测试与 Vue build，再执行平台矩阵。
+- Windows 使用 `scripts/build_windows.ps1`。
+- Linux/macOS 使用 `scripts/build_unix.sh`。
+- 每个平台必须产生独立 SHA256，最终 Release 还必须包含 `SHA256SUMS.txt`。
+- 矩阵 job 只构建并上传临时 artifact；只能由单独 `publish` job 创建/更新 GitHub Release，避免并发竞态。
+- 正式稳定版不得在某个平台失败后静默发布缺少该平台资产的不完整 Release。
+- macOS Developer ID 签名/notarization 未配置前，文档必须明确标记，禁止声称已签名。
+- 修改 Vite 输出、静态目录、数据目录、PyInstaller、Node/Python 版本、平台或架构时必须同步检查 Release Action 和平台文档。
 
 ## 10. 文档是实现的一部分
 
@@ -75,11 +89,11 @@ API Key 加密落库；消费者姓名、电话、地址默认不发送 AI；AI 
 - 拼多多 API 能力状态改变。
 - 诊断阈值、算法、基线、评分和优先级改变。
 - UI 主流程、用户操作方式改变。
-- 发布、部署、依赖、构建流程改变。
+- 发布平台、CPU 架构、部署、依赖、构建流程改变。
 - 安全与隐私规则改变。
 - Git/测试/Agent 工程规则改变。
 
-关键决策写 `docs/product-discussion.md` 或独立 decision/migration 文档；功能验收写 `docs/functional-spec.md`；前端架构写 `docs/ui-architecture.md`；诊断写 `docs/diagnosis-engine.md`；同步写 `docs/pdd-sync.md`；发布写 `docs/release.md`。如果代码与文档冲突，提交不得视为完整。
+关键决策写 `docs/product-discussion.md` 或独立 decision/migration 文档；功能验收写 `docs/functional-spec.md`；前端架构写 `docs/ui-architecture.md`；诊断写 `docs/diagnosis-engine.md`；同步写 `docs/pdd-sync.md`；发布写 `docs/release.md` 和 `docs/platform-support.md`。如果代码与文档冲突，提交不得视为完整。
 
 ## 11. Vue 前端强制架构
 
@@ -115,4 +129,4 @@ frontend/src/
 4. 趋势、同商品 SKU 横向比较、异常持续时间。
 5. AI 结构化行动计划和复盘。
 6. 图片分析/生成工作流。
-7. Windows Release、备份和数据库 migration。
+7. 多平台 Release 稳定性、签名/公证、备份和数据库 migration。

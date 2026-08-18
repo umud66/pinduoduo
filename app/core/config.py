@@ -6,6 +6,8 @@ from pathlib import Path
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app.core.paths import default_data_dir
+
 
 class Settings(BaseSettings):
     app_name: str = "拼多多 AI 运营助手"
@@ -14,7 +16,7 @@ class Settings(BaseSettings):
     debug: bool = False
     auto_open_browser: bool = True
 
-    data_dir: Path = Field(default=Path("data"))
+    data_dir: Path = Field(default_factory=default_data_dir)
     database_filename: str = "app.db"
     pdd_gateway_url: str = "https://gw-api.pinduoduo.com/api/router"
     request_timeout_seconds: float = 30.0

@@ -1,18 +1,29 @@
 # Pinduoduo AI Operator
 
-面向拼多多中小商家的本地化 AI 运营诊断工具。目标是 **低门槛、一键启动、本地 SQLite、拼多多 API + 商家报表双通道、可替换 AI Provider，并支持图片生成**。
+面向拼多多中小商家的本地化 AI 运营诊断工具。目标是 **低门槛、本地 SQLite、拼多多 API + 商家报表双通道、可替换 AI Provider，并支持 Windows / macOS / Linux 发布**。
 
 > 当前处于 MVP 开发阶段。拼多多开放平台实际权限以应用审核和店铺授权 scope 为准；曝光、点击、推广等指标不能假定必然可由 API 获取。
 
 ## 普通用户体验
 
-1. 下载 Windows Release。
-2. 双击 `PDD运营助手.exe`。
+1. 从 GitHub Release 下载与你的操作系统/CPU 对应的包。
+2. Windows 运行 `PDD运营助手.exe`；macOS 打开 `PDD运营助手.app`；Linux 运行 `PDD-AI-Operator`。
 3. 浏览器自动打开本地运营工作台。
 4. 配置拼多多授权和 AI Provider。
 5. 同步/导入数据并进行 SKU 诊断。
 
 最终用户不需要安装 PostgreSQL、Redis、Docker、Python、Node.js/npm。
+
+## Release 平台
+
+```text
+Windows x64
+Linux x64
+macOS Apple Silicon / arm64
+macOS Intel / x64
+```
+
+详细平台、Runner、数据目录和签名状态见 `docs/platform-support.md` 与 `docs/release.md`。
 
 ## 技术路线
 
@@ -59,13 +70,19 @@ python scripts/dev.py
 
 ## 构建
 
-Windows 构建统一使用：
+Windows：
 
 ```powershell
 ./scripts/build_windows.ps1
 ```
 
-脚本执行：`npm install/npm ci -> npm run build -> app/static -> PyInstaller`。
+Linux/macOS：
+
+```bash
+./scripts/build_unix.sh
+```
+
+正式 Release 使用 `.github/workflows/release.yml` 在原生 Runner 上构建全部平台，并统一发布 SHA256。
 
 ## 设计原则
 
@@ -85,6 +102,7 @@ Windows 构建统一使用：
 - `docs/ui-architecture.md`：当前 Vue 前端架构与强制约束。
 - `docs/diagnosis-engine.md`：SKU 诊断、GMV 拆解、影响度、置信度和优先级。
 - `docs/pdd-sync.md`：拼多多同步与恢复机制。
+- `docs/platform-support.md`：多平台发布矩阵、数据目录和平台约束。
 - `docs/deployment.md`：部署原则。
-- `docs/release.md`：Windows Release 流程。
+- `docs/release.md`：多平台 Release 流程。
 - `AGENTS.md`：后续编码 Agent 工程规则。
