@@ -5,30 +5,28 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="color-scheme" content="light" />
   <title>拼多多 AI 运营助手</title>
-  <link rel="stylesheet" href="/static/styles.css" />
+  <link rel="stylesheet" href="/static/css/base.css" />
+  <link rel="stylesheet" href="/static/css/layout.css" />
+  <link rel="stylesheet" href="/static/css/components.css" />
+  <link rel="stylesheet" href="/static/css/pages.css" />
 </head>
 <body>
-  <div id="app" class="app-shell">
+  <div class="app-shell">
     <aside class="sidebar">
-      <div class="brand">
-        <div class="brand-mark">P</div>
-        <div>
-          <strong>拼多多 AI 运营助手</strong>
-          <span>本地运营工作台</span>
-        </div>
-      </div>
-
-      <nav class="nav-list" aria-label="主导航">
-        <button class="nav-item active" data-page="dashboard"><span class="nav-icon">⌂</span><span>经营总览</span></button>
-        <button class="nav-item" data-page="skus"><span class="nav-icon">▦</span><span>SKU 诊断</span></button>
-        <button class="nav-item" data-page="data"><span class="nav-icon">⇅</span><span>数据中心</span></button>
-        <button class="nav-item" data-page="studio"><span class="nav-icon">✦</span><span>AI 工作台</span></button>
-        <button class="nav-item" data-page="settings"><span class="nav-icon">⚙</span><span>设置</span></button>
+      <a class="brand" href="#" data-nav="dashboard">
+        <span class="brand-mark">P</span>
+        <span><strong>拼多多 AI 运营助手</strong><small>本地运营工作台</small></span>
+      </a>
+      <nav class="nav-list">
+        <button class="nav-item active" data-nav="dashboard">经营总览</button>
+        <button class="nav-item" data-nav="skus">SKU 诊断</button>
+        <button class="nav-item" data-nav="data">数据中心</button>
+        <button class="nav-item" data-nav="studio">AI 工作台</button>
+        <button class="nav-item" data-nav="settings">设置</button>
       </nav>
-
       <div class="sidebar-foot">
-        <div class="local-badge"><span></span>数据保存在本机</div>
-        <div id="service-status" class="service-status">正在检查服务…</div>
+        <span class="local-badge">● 数据保存在本机</span>
+        <span id="service-status" class="service-status">正在检查服务…</span>
       </div>
     </aside>
 
@@ -36,167 +34,36 @@
       <header class="topbar">
         <div><p id="page-kicker" class="page-kicker">店铺经营</p><h1 id="page-title">经营总览</h1></div>
         <div class="topbar-actions">
-          <label class="shop-switcher"><span>当前店铺</span><select id="shop-select"></select></label>
-          <button id="quick-import" class="button secondary">导入报表</button>
+          <label class="shop-switcher">当前店铺 <select id="shop-select"></select></label>
+          <button class="button secondary" data-nav="data">数据中心</button>
         </div>
       </header>
 
-      <section id="page-dashboard" class="page active" data-page-panel="dashboard">
-        <div id="dashboard-content" class="page-content loading-block">正在加载经营数据…</div>
-      </section>
-
-      <section id="page-skus" class="page" data-page-panel="skus">
-        <div class="page-content">
-          <div class="toolbar card compact">
-            <div class="search-box"><span>⌕</span><input id="sku-search" type="search" placeholder="搜索商品名、SKU、商品 ID" /></div>
-            <select id="severity-filter" class="control small">
-              <option value="all">全部状态</option><option value="high">严重</option><option value="medium">关注</option><option value="healthy">健康</option><option value="unrun">未诊断</option>
-            </select>
-            <button id="run-shop-diagnosis" class="button primary">批量诊断</button>
-          </div>
-          <div class="card table-card">
-            <div class="card-heading"><div><p class="section-kicker">SKU WORKBENCH</p><h2>SKU 经营状态</h2></div><span id="sku-count" class="muted">0 个 SKU</span></div>
-            <div class="table-wrap">
-              <table class="data-table">
-                <thead><tr><th>商品 / SKU</th><th>最新销量</th><th>GMV</th><th>库存</th><th>健康度</th><th>主要问题</th><th></th></tr></thead>
-                <tbody id="sku-table-body"></tbody>
-              </table>
-            </div>
-            <div id="sku-empty" class="empty-state hidden"></div>
-          </div>
-        </div>
-      </section>
-
-      <section id="page-data" class="page" data-page-panel="data">
-        <div class="page-content two-column-layout">
-          <div class="stack">
-            <article class="card">
-              <div class="card-heading"><div><p class="section-kicker">PDD OPEN PLATFORM</p><h2>拼多多 API 能力检测</h2></div><span id="pdd-config-status" class="status-pill neutral">未检测</span></div>
-              <p class="helper-text">使用当前店铺已保存的授权信息进行只读探针。检测商品、订单增量和售后增量接口是否可用。</p>
-              <div id="probe-results" class="probe-list"></div>
-              <div class="card-actions"><button id="run-pdd-probe" class="button secondary">运行能力检测</button><button class="button ghost" data-nav="settings">修改授权信息</button></div>
-            </article>
-
-            <article class="card">
-              <div class="card-heading"><div><p class="section-kicker">REPORT IMPORT</p><h2>导入经营报表</h2></div><span class="status-pill good">推荐</span></div>
-              <p class="helper-text">支持 CSV、XLSX、XLSM。系统自动识别日期、SKU ID、曝光、点击、订单、销量、GMV、退款、推广等字段。</p>
-              <label id="drop-zone" class="drop-zone">
-                <input id="report-file" type="file" accept=".csv,.xlsx,.xlsm" hidden />
-                <div class="drop-icon">⇧</div><strong>选择报表文件</strong><span>或将文件拖到这里 · 文件只保存在本机</span>
-              </label>
-              <div id="report-preview" class="report-preview hidden"></div>
-            </article>
-          </div>
-          <aside class="stack">
-            <article class="card side-card"><p class="section-kicker">GET STARTED</p><h2>还没有真实数据？</h2><p class="helper-text">可以先创建一组明确标记为演示的数据，体验 Dashboard、SKU 异常诊断和 AI 建议流程。</p><button id="seed-demo" class="button secondary full">创建演示数据</button></article>
-            <article class="card side-card"><p class="section-kicker">DATA RULE</p><h3>系统不会猜缺失指标</h3><ul class="check-list"><li>API 能拿到的字段自动同步</li><li>曝光/点击/推广可由报表补齐</li><li>缺失值保留 Unknown，不当作 0</li><li>导入相同 SKU + 日期会更新记录</li></ul></article>
-          </aside>
-        </div>
-      </section>
-
-      <section id="page-studio" class="page" data-page-panel="studio">
-        <div class="page-content two-column-layout studio-layout">
-          <div class="stack">
-            <article class="card">
-              <div class="card-heading"><div><p class="section-kicker">AI CHAT</p><h2>运营助手</h2></div><select id="studio-provider" class="control small"></select></div>
-              <textarea id="chat-prompt" class="textarea tall" placeholder="例如：请根据我粘贴的商品信息，给出 3 个可执行的主图测试方向。"></textarea>
-              <div class="card-actions"><button id="send-chat" class="button primary">发送给模型</button></div>
-              <div id="chat-result" class="ai-result empty-result">结果会显示在这里。</div>
-            </article>
-            <article class="card">
-              <div class="card-heading"><div><p class="section-kicker">IMAGE GENERATION</p><h2>商品素材生成</h2></div><span class="status-pill neutral">需图片模型</span></div>
-              <textarea id="image-prompt" class="textarea" placeholder="描述希望生成的商品主图或场景图。建议包含主体、背景、构图、卖点、风格和限制。"></textarea>
-              <div class="form-row"><label class="field grow"><span>尺寸</span><select id="image-size"><option>1024x1024</option><option>1024x1536</option><option>1536x1024</option></select></label><button id="generate-image" class="button primary align-end">生成图片</button></div>
-              <div id="image-results" class="image-grid"></div>
-            </article>
-          </div>
-          <aside class="stack"><article class="card side-card"><p class="section-kicker">MODEL ROUTING</p><h3>模型通过 Provider 管理</h3><p class="helper-text">支持 OpenAI Compatible 中转站，也可以配置 Anthropic / Gemini。业务功能不绑定单一模型厂商。</p><button class="button ghost full" data-nav="settings">管理模型</button></article></aside>
-        </div>
-      </section>
-
-      <section id="page-settings" class="page" data-page-panel="settings">
-        <div class="page-content settings-grid">
-          <article class="card">
-            <div class="card-heading"><div><p class="section-kicker">SHOP SETTINGS</p><h2>店铺与拼多多授权</h2></div></div>
-            <form id="shop-settings-form" class="form-grid">
-              <label class="field full"><span>店铺名称</span><input id="setting-shop-name" required /></label>
-              <label class="field full"><span>Client ID</span><input id="setting-client-id" autocomplete="off" /></label>
-              <label class="field full"><span>Client Secret</span><input id="setting-client-secret" type="password" autocomplete="new-password" placeholder="留空表示保持不变" /></label>
-              <label class="field full"><span>Access Token</span><input id="setting-access-token" type="password" autocomplete="new-password" placeholder="留空表示保持不变" /></label>
-              <div class="form-note full">密钥使用本机 secret.key 加密后保存，页面不会回显完整 Secret 或 Token。</div>
-              <div class="full card-actions"><button class="button primary" type="submit">保存店铺设置</button></div>
-            </form>
-          </article>
-          <article class="card">
-            <div class="card-heading"><div><p class="section-kicker">AI PROVIDERS</p><h2>模型与中转站</h2></div></div>
-            <div id="provider-list" class="provider-list"></div>
-            <details class="provider-add" open><summary>添加模型服务</summary>
-              <form id="provider-form" class="form-grid nested-form">
-                <label class="field"><span>名称</span><input id="provider-name" required placeholder="我的中转站" /></label>
-                <label class="field"><span>类型</span><select id="provider-type"><option value="openai_compatible">OpenAI Compatible</option><option value="anthropic">Anthropic</option><option value="gemini">Gemini</option></select></label>
-                <label class="field full"><span>Base URL</span><input id="provider-base-url" required value="https://api.openai.com/v1" /></label>
-                <label class="field full"><span>API Key</span><input id="provider-api-key" type="password" required autocomplete="new-password" /></label>
-                <label class="field"><span>聊天模型</span><input id="provider-chat-model" placeholder="gpt-5-mini / deepseek-chat" /></label>
-                <label class="field"><span>图片模型</span><input id="provider-image-model" placeholder="gpt-image-1" /></label>
-                <label class="field full"><span>视觉模型（可选）</span><input id="provider-vision-model" /></label>
-                <div class="full card-actions"><button class="button secondary" type="submit">保存 Provider</button></div>
-              </form>
-            </details>
-          </article>
-        </div>
-      </section>
+      <section id="page-dashboard" class="page active"><div id="dashboard-content" class="page-content"></div></section>
+      <section id="page-skus" class="page"><div id="skus-content" class="page-content"></div></section>
+      <section id="page-data" class="page"><div id="data-content" class="page-content"></div></section>
+      <section id="page-studio" class="page"><div id="studio-content" class="page-content"></div></section>
+      <section id="page-settings" class="page"><div id="settings-content" class="page-content"></div></section>
     </main>
   </div>
 
   <div id="drawer-backdrop" class="drawer-backdrop hidden"></div>
   <aside id="sku-drawer" class="drawer" aria-hidden="true">
-    <div class="drawer-head"><div><p class="section-kicker">SKU DETAIL</p><h2 id="drawer-title">SKU 详情</h2></div><button id="close-drawer" class="icon-button" aria-label="关闭">×</button></div>
+    <header class="drawer-head"><div><p class="section-kicker">SKU DETAIL</p><h2 id="drawer-title">SKU 详情</h2></div><button id="close-drawer" class="icon-button">×</button></header>
     <div id="drawer-content" class="drawer-content"></div>
   </aside>
 
   <div id="onboarding" class="modal-backdrop hidden">
     <section class="modal onboarding-modal">
-      <div class="onboarding-side">
-        <div class="brand-mark large">P</div><p class="section-kicker light">WELCOME</p><h2>三步开始使用</h2>
-        <ol class="onboarding-steps">
-          <li class="active" data-wizard-indicator="1"><span>1</span><div><strong>创建店铺</strong><small>建立本地数据空间</small></div></li>
-          <li data-wizard-indicator="2"><span>2</span><div><strong>配置 AI</strong><small>可选，后续也能设置</small></div></li>
-          <li data-wizard-indicator="3"><span>3</span><div><strong>准备数据</strong><small>导入报表或演示数据</small></div></li>
-        </ol>
-      </div>
-      <div class="onboarding-main">
-        <div class="wizard-step active" data-wizard-step="1">
-          <p class="section-kicker">STEP 1 OF 3</p><h2>先创建你的店铺</h2><p class="helper-text">店铺数据会存到当前电脑的 SQLite 中。拼多多授权可以现在填写，也可以稍后补充。</p>
-          <form id="wizard-shop-form" class="form-grid spacious">
-            <label class="field full"><span>店铺名称 *</span><input id="wizard-shop-name" required placeholder="例如：我的家居店" /></label>
-            <label class="field full"><span>Client ID</span><input id="wizard-client-id" /></label>
-            <label class="field"><span>Client Secret</span><input id="wizard-client-secret" type="password" /></label>
-            <label class="field"><span>Access Token</span><input id="wizard-access-token" type="password" /></label>
-            <div class="full wizard-actions"><span></span><button class="button primary" type="submit">保存并继续</button></div>
-          </form>
-        </div>
-        <div class="wizard-step" data-wizard-step="2">
-          <p class="section-kicker">STEP 2 OF 3</p><h2>连接大模型或中转站</h2><p class="helper-text">没有模型也能使用确定性 SKU 诊断。配置后可以生成更具体的运营建议与图片。</p>
-          <form id="wizard-provider-form" class="form-grid spacious">
-            <label class="field"><span>服务名称</span><input id="wizard-provider-name" value="默认 AI" /></label>
-            <label class="field"><span>类型</span><select id="wizard-provider-type"><option value="openai_compatible">OpenAI Compatible</option><option value="anthropic">Anthropic</option><option value="gemini">Gemini</option></select></label>
-            <label class="field full"><span>Base URL</span><input id="wizard-provider-url" value="https://api.openai.com/v1" /></label>
-            <label class="field full"><span>API Key</span><input id="wizard-provider-key" type="password" /></label>
-            <label class="field"><span>聊天模型</span><input id="wizard-provider-model" placeholder="例如 gpt-5-mini" /></label>
-            <label class="field"><span>图片模型</span><input id="wizard-image-model" placeholder="可选" /></label>
-            <div class="full wizard-actions"><button id="skip-provider" type="button" class="button ghost">暂时跳过</button><button class="button primary" type="submit">保存并继续</button></div>
-          </form>
-        </div>
-        <div class="wizard-step" data-wizard-step="3">
-          <p class="section-kicker">STEP 3 OF 3</p><h2>准备第一批经营数据</h2><p class="helper-text">正式使用建议从拼多多后台导出 SKU 维度经营报表。你也可以先用演示数据熟悉系统。</p>
-          <div class="choice-grid"><button id="wizard-go-import" class="choice-card"><strong>导入真实报表</strong><span>CSV / XLSX / XLSM</span></button><button id="wizard-demo" class="choice-card"><strong>先体验演示数据</strong><span>自动生成 6 个 SKU</span></button></div>
-          <div class="wizard-actions"><span></span><button id="finish-wizard" class="button ghost">直接进入系统</button></div>
-        </div>
-      </div>
+      <aside class="onboarding-side">
+        <span class="brand-mark large">P</span><h2>三步开始使用</h2>
+        <ol><li data-wizard-indicator="1" class="active">1. 创建店铺</li><li data-wizard-indicator="2">2. 配置 AI</li><li data-wizard-indicator="3">3. 准备数据</li></ol>
+      </aside>
+      <div id="onboarding-main" class="onboarding-main"></div>
     </section>
   </div>
 
-  <div id="toast-stack" class="toast-stack" aria-live="polite"></div>
-  <script src="/static/app.js"></script>
+  <div id="toast-stack" class="toast-stack"></div>
+  <script type="module" src="/static/js/app.js"></script>
 </body>
 </html>

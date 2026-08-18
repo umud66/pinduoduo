@@ -185,3 +185,18 @@ unknown   = 尚未验证
 ### 文档提交粒度
 
 如果文档是某个功能的一部分，应跟随该大功能一起提交；只有像产品基线、架构基线、完整规格说明这种本身就是独立大功能的文档建设，才单独使用 `docs:` commit。
+
+## 13. 前端 UI 模块化规则
+
+前端不得再次退化为单体 `app.js` / `styles.css`。
+
+- `app/static/js/app.js` 只负责应用启动、路由和页面编排，不承载具体业务实现。
+- 公共 HTTP、DOM、格式化等基础能力放在 `app/static/js/core/`。
+- 可复用交互组件放在 `app/static/js/components/`。
+- 每个主页面使用独立的 `app/static/js/pages/<feature>.js`。
+- 页面文件包含多个独立工作区或明显增长时，应继续拆成页面子目录/组件，禁止继续向一个文件无限追加。
+- 跨页面共享状态集中在 `state.js`，避免散落全局变量。
+- CSS 至少按基础、布局、组件、页面拆分；复杂页面可以继续拆专用 CSS。
+- 前端生产运行继续使用原生 ES Modules，不得要求普通用户安装 Node/npm 才能启动软件。
+- 新增静态目录后必须确认 PyInstaller 仍递归打包整个 `app/static/`。
+- UI 架构说明见 `docs/ui-architecture.md`。
