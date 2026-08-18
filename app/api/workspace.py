@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Query
 
 from app.db.database import session_scope
+from app.services.decision_support import sku_decision_support
 from app.services.insights import shop_trend_overview, sku_insights
 from app.services.workspace import bootstrap_status, dashboard_summary, list_skus, seed_demo_data, sku_detail
 
@@ -49,6 +50,15 @@ def get_sku_insights(sku_id: int) -> dict[str, object]:
     try:
         with session_scope() as session:
             return sku_insights(session, sku_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get("/skus/{sku_id}/decision-support")
+def get_sku_decision_support(sku_id: int) -> dict[str, object]:
+    try:
+        with session_scope() as session:
+            return sku_decision_support(session, sku_id)
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
