@@ -17,7 +17,9 @@
 
 - `app/services/pdd/`：拼多多 Gateway、签名、接口、分页、错误和原始响应。
 - `app/db/`：平台数据标准化，本地模型是分析主来源。
-- `app/services/diagnosis/`：确定性诊断，缺失数据保持 `None/unknown`。
+- `app/services/diagnosis/`：确定性单日诊断，缺失数据保持 `None/unknown`。
+- `app/services/trends.py`：纯趋势/窗口/同商品比较算法，不访问数据库。
+- `app/services/insights.py`：从数据库组织趋势、同商品 SKU、持续时间等经营洞察。
 - `app/services/ai/`：所有模型调用经 Provider/Gateway。
 
 ## 3. SQLite 与运行数据规则
@@ -49,11 +51,24 @@ unknown   = 未验证
 
 API Key 加密落库；消费者姓名、电话、地址默认不发送 AI；AI 输出不得直接驱动订单、退款、改价等写操作。
 
-## 6. 诊断规则
+## 6. 诊断与趋势规则
 
-每条规则至少定义稳定 code、category、severity、样本门槛、当前/基线/变化、impact_score、confidence、priority_score、actions、validation_metrics 和单元测试。
+每条诊断规则至少定义稳定 code、category、severity、样本门槛、当前/基线/变化、impact_score、confidence、priority_score、actions、validation_metrics 和单元测试。
 
 修改诊断阈值、基线算法、健康分、GMV 拆解或优先级公式时，必须同步更新 `docs/diagnosis-engine.md` 和必要的 `docs/functional-spec.md`。
+
+趋势分析必须遵守：
+
+- 时间窗口以 SKU 最新真实数据日为锚点。
+- 今日 vs 7 日均值与最近 7 日 vs 前 7 日的口径以 `docs/trend-analysis.md` 为准。
+- CTR/CVR/退款率/ROI 跨日不得简单平均每日百分比，要重新聚合分子/分母。
+- 缺失流量/推广数据保持 unknown，不允许补 0。
+- 30 日图只展示真实存在的数据日，不自动补造日期。
+- 同商品 SKU 排名只能使用同一窗口内的真实数据。
+- 异常持续时间只认连续的真实诊断日期，日期缺口必须中断。
+- 趋势方向、同商品排名、HHI 当前只用于洞察，不得未经规则变更直接改写 `severity / health_score / priority_score`。
+
+修改上述趋势窗口、8% 展示阈值、HHI 分档、持续时间算法或趋势与诊断融合方式时，必须同步更新 `docs/trend-analysis.md`、相关测试，并在需要时更新 `docs/diagnosis-engine.md`。
 
 ## 7. Git 提交规范
 
@@ -62,6 +77,8 @@ API Key 加密落库；消费者姓名、电话、地址默认不发送 AI；AI 
 ## 8. 测试规则
 
 后端至少运行：`python -m compileall app scripts tests` 与 `pytest`。前端至少运行：`npm install/npm ci` 与 `npm run build`。无法执行必须明确记录环境限制，不得声称通过。
+
+趋势/统计算法必须优先写纯函数测试，至少覆盖：缺失值、窗口边界、比率聚合、同商品排名和连续日期逻辑。
 
 涉及 Release/平台的改动必须通过原生 GitHub Runner 验证对应 PyInstaller 构建。不能用一个平台的本地构建结果声称另一个平台已经可发布。
 
@@ -88,12 +105,13 @@ API Key 加密落库；消费者姓名、电话、地址默认不发送 AI；AI 
 - 数据结构、数据来源、字段口径改变。
 - 拼多多 API 能力状态改变。
 - 诊断阈值、算法、基线、评分和优先级改变。
+- 趋势窗口、比率聚合、同商品比较、持续时间等运营分析口径改变。
 - UI 主流程、用户操作方式改变。
 - 发布平台、CPU 架构、部署、依赖、构建流程改变。
 - 安全与隐私规则改变。
 - Git/测试/Agent 工程规则改变。
 
-关键决策写 `docs/product-discussion.md` 或独立 decision/migration 文档；功能验收写 `docs/functional-spec.md`；前端架构写 `docs/ui-architecture.md`；诊断写 `docs/diagnosis-engine.md`；同步写 `docs/pdd-sync.md`；发布写 `docs/release.md` 和 `docs/platform-support.md`。如果代码与文档冲突，提交不得视为完整。
+关键决策写 `docs/product-discussion.md` 或独立 decision/migration 文档；功能验收写 `docs/functional-spec.md`；前端架构写 `docs/ui-architecture.md`；诊断写 `docs/diagnosis-engine.md`；趋势分析写 `docs/trend-analysis.md`；同步写 `docs/pdd-sync.md`；发布写 `docs/release.md` 和 `docs/platform-support.md`。如果代码与文档冲突，提交不得视为完整。
 
 ## 11. Vue 前端强制架构
 
@@ -113,9 +131,11 @@ frontend/src/
 - `index.html` 只能作为 Vite 挂载入口，禁止放业务实现。
 - 新主页面建立独立 `*View.vue` 和路由。
 - View 只做页面编排；多个独立工作区拆到 `components/<domain>/`。
+- 趋势类组件统一放在 `components/insights/`，禁止在 `SkuDiagnosisView.vue` 或 `SkuDrawer.vue` 重复实现分析算法。
 - API URL 和通用请求错误处理集中到 `src/api/`。
 - Pinia 只保存跨页面共享状态。
 - 不允许重新退化为单个超大 `.vue` / `.js` / CSS 文件。
+- 复杂新样式使用独立 CSS（例如 `styles/trends.css`），不要继续无限增长 `app.css`。
 - `app/static/` 是 Vite 生成产物，不作为前端源码手工维护。
 - Vite 使用 `/api` 代理 FastAPI；生产由 FastAPI 提供 SPA fallback。
 - 普通用户运行不依赖 Node/npm。
@@ -126,7 +146,7 @@ frontend/src/
 1. 真实 PDD capability probe 与字段校准。
 2. 商品/SKU/订单/售后稳定 ETL。
 3. 报表字段映射和数据质量。
-4. 趋势、同商品 SKU 横向比较、异常持续时间。
+4. 趋势变化点、SKU 蚕食和趋势/诊断优先级融合。
 5. AI 结构化行动计划和复盘。
 6. 图片分析/生成工作流。
 7. 多平台 Release 稳定性、签名/公证、备份和数据库 migration。
