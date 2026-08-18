@@ -12,6 +12,7 @@ from app.api.data import router as data_router
 from app.api.diagnosis import router as diagnosis_router
 from app.api.health import router as health_router
 from app.api.pdd import router as pdd_router
+from app.api.workspace import router as workspace_router
 from app.core.config import get_settings
 from app.db.database import init_database
 
@@ -29,6 +30,7 @@ app.include_router(ai_router, prefix="/api")
 app.include_router(data_router, prefix="/api")
 app.include_router(diagnosis_router, prefix="/api")
 app.include_router(pdd_router, prefix="/api")
+app.include_router(workspace_router, prefix="/api")
 
 static_dir = Path(__file__).resolve().parent / "static"
 app.mount("/static", StaticFiles(directory=static_dir), name="static")

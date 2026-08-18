@@ -31,6 +31,8 @@ FIELD_ALIASES: dict[str, tuple[str, ...]] = {
     "ad_clicks": ("推广点击", "广告点击", "ad_clicks"),
     "ad_orders": ("推广订单", "广告订单", "ad_orders"),
     "ad_gmv": ("推广成交金额", "广告成交金额", "ad_gmv"),
+    "price": ("价格", "SKU价格", "商品价格", "price"),
+    "stock": ("库存", "可售库存", "SKU库存", "stock"),
 }
 
 

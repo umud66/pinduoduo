@@ -20,6 +20,17 @@ class ProviderCreate(BaseModel):
     image_model: str | None = None
 
 
+class ProviderUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=128)
+    provider_type: str | None = None
+    base_url: str | None = None
+    api_key: str | None = None
+    chat_model: str | None = None
+    vision_model: str | None = None
+    image_model: str | None = None
+    enabled: bool | None = None
+
+
 class ChatRequest(BaseModel):
     prompt: str = Field(min_length=1)
     model: str | None = None
@@ -31,27 +42,47 @@ class ImageRequest(BaseModel):
     size: str = "1024x1024"
 
 
+def _provider_payload(p) -> dict[str, object]:
+    return {
+        "id": p.id,
+        "name": p.name,
+        "provider_type": p.provider_type,
+        "base_url": p.base_url,
+        "chat_model": p.chat_model,
+        "vision_model": p.vision_model,
+        "image_model": p.image_model,
+        "enabled": p.enabled,
+        "has_api_key": bool(p.api_key_encrypted),
+    }
+
+
 @router.get("/ai/providers")
 def list_providers() -> list[dict[str, object]]:
-    return [
-        {
-            "id": p.id,
-            "name": p.name,
-            "provider_type": p.provider_type,
-            "base_url": p.base_url,
-            "chat_model": p.chat_model,
-            "vision_model": p.vision_model,
-            "image_model": p.image_model,
-            "enabled": p.enabled,
-        }
-        for p in service.list_providers()
-    ]
+    return [_provider_payload(p) for p in service.list_providers()]
 
 
 @router.post("/ai/providers")
 def create_provider(payload: ProviderCreate) -> dict[str, object]:
     provider = service.create_provider(**payload.model_dump())
-    return {"id": provider.id, "name": provider.name, "provider_type": provider.provider_type}
+    return _provider_payload(provider)
+
+
+@router.put("/ai/providers/{provider_id}")
+def update_provider(provider_id: int, payload: ProviderUpdate) -> dict[str, object]:
+    try:
+        provider = service.update_provider(provider_id, **payload.model_dump())
+        return _provider_payload(provider)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.delete("/ai/providers/{provider_id}")
+def delete_provider(provider_id: int) -> dict[str, object]:
+    try:
+        service.delete_provider(provider_id)
+        return {"ok": True}
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.post("/ai/providers/{provider_id}/test")
