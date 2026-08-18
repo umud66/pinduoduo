@@ -65,3 +65,9 @@ python scripts/dev.py
 - 提交以“大功能”为单位，禁止按单文件机械拆 commit。
 
 更详细说明见 `docs/` 与 `AGENTS.md`。
+
+## Release 发布
+
+正式 Windows 包由 GitHub Actions 自动构建。推送 `v0.1.0` 形式的 Tag 后，`Release Windows` 工作流会运行测试、执行 PyInstaller 打包，并创建 GitHub Release，上传 Windows x64 ZIP 和 SHA256 校验文件。
+
+也可以从 GitHub Actions 页面手动运行 `Release Windows`，输入版本 Tag 发布。

@@ -1,0 +1,125 @@
+name: Release Windows
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag, for example v0.1.0"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  windows-release:
+    name: Build and publish Windows release
+    runs-on: windows-latest
+    env:
+      PYTHONUTF8: "1"
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve release tag
+        id: release
+        shell: pwsh
+        run: |
+          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+            $tag = "${{ inputs.tag }}"
+          } else {
+            $tag = "${{ github.ref_name }}"
+          }
+
+          if ($tag -notmatch '^v[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$') {
+            throw "Invalid release tag '$tag'. Expected vMAJOR.MINOR.PATCH, optionally with a suffix."
+          }
+
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          "archive=PDD-AI-Operator-$tag-windows-x64.zip" >> $env:GITHUB_OUTPUT
+
+      - name: Ensure tag exists for manual release
+        if: github.event_name == 'workflow_dispatch'
+        shell: pwsh
+        run: |
+          $tag = "${{ steps.release.outputs.tag }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          $existingTag = git ls-remote --tags origin "refs/tags/$tag"
+          if (-not $existingTag) {
+            git tag -a $tag "${{ github.sha }}" -m "Release $tag"
+            git push origin "refs/tags/$tag"
+          }
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: Run tests
+        shell: pwsh
+        run: python -m pytest -q
+
+      - name: Build Windows application
+        shell: pwsh
+        run: ./scripts/build_windows.ps1 -SkipInstall
+
+      - name: Package release files
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path release | Out-Null
+          $archive = "${{ steps.release.outputs.archive }}"
+          Compress-Archive -Path "dist/PDD运营助手/*" -DestinationPath "release/$archive" -CompressionLevel Optimal
+
+          $hash = (Get-FileHash "release/$archive" -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash *$archive" | Set-Content -Encoding ascii "release/$archive.sha256"
+
+      - name: Create or update GitHub Release
+        shell: pwsh
+        run: |
+          $tag = "${{ steps.release.outputs.tag }}"
+          $archive = "${{ steps.release.outputs.archive }}"
+          $isPrerelease = $tag.Contains("-")
+
+          $releaseExists = $false
+          try {
+            gh release view $tag *> $null
+            $releaseExists = ($LASTEXITCODE -eq 0)
+          } catch {
+            $releaseExists = $false
+          }
+
+          if (-not $releaseExists) {
+            $args = @(
+              "release", "create", $tag,
+              "--title", "PDD AI Operator $tag",
+              "--generate-notes",
+              "--target", "${{ github.sha }}"
+            )
+            if ($isPrerelease) {
+              $args += "--prerelease"
+            }
+            gh @args
+          }
+
+          gh release upload $tag "release/$archive" "release/$archive.sha256" --clobber
