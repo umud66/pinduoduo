@@ -11,6 +11,8 @@ build/
 .idea/
 .vscode/
 .DS_Store
+frontend/node_modules/
+app/static/
 
 data/*
 !data/.gitkeep

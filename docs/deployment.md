@@ -2,80 +2,33 @@
 
 ## 普通用户目标
 
-正式版不让用户执行命令行。Windows 用户下载发布包后双击 `PDD运营助手.exe` 即可启动，本地浏览器自动打开 `http://127.0.0.1:8765`。
+正式 Windows 用户只需下载 Release、解压、双击 `PDD运营助手.exe`。普通用户不需要安装 Python、Node.js/npm、PostgreSQL、Redis、Docker。
 
-## 源码用户
+## 源码开发环境
 
-Windows 可双击：
+Vue 迁移后，源码开发需要 Python 3.11+ 和 Node.js 22+。`start.bat` 检查 Python/npm，`scripts/dev.py` 启动 FastAPI `:8765` 和 Vite `:5173`，浏览器开发入口为 `http://127.0.0.1:5173`。
 
-```text
-start.bat
-```
+## 正式前端产物
 
-它会自动：
-
-1. 创建 `.venv`。
-2. 安装项目依赖。
-3. 启动本地服务。
-4. 自动打开浏览器。
-
-该模式需要机器预先安装 Python，仅供开发和源码试用。
-
-## 构建 Windows 发布包
-
-PowerShell：
-
-```powershell
-./scripts/build_windows.ps1
-```
-
-构建产物位于：
+`frontend/` 是源码，`app/static/` 是 Vite build 生成产物：
 
 ```text
-dist/PDD运营助手/
+frontend npm run build
+       ↓
+app/static/index.html
+app/static/assets/
 ```
 
-发布时应把程序和空的 `data/` 初始化逻辑一起测试。不要把开发者自己的 `app.db`、API Key、Access Token 打入发布包。
+FastAPI 生产环境托管 `/assets`，并对 Vue Router history 路由执行 SPA fallback。
 
-## 数据备份
+## Windows 构建
 
-最简单可靠的用户备份单位是整个 `data/` 目录。未来设置页应提供“一键备份”，实现方式为在无写事务时创建 SQLite 在线备份并同时复制 `secret.key`。
+`./scripts/build_windows.ps1` 统一完成 npm install/npm ci、npm run build、校验 app/static/index.html 和 PyInstaller。
 
-## 升级策略
+## GitHub Release
 
-当前 MVP 用 SQLAlchemy `create_all` 初始化数据库。进入首次公开发布前，需要加入版本化 schema migration，升级流程必须做到：
+workflow 在 `windows-latest` 中安装 Python 3.12 与 Node.js 22，运行 pytest，再完成 Vue + PyInstaller 构建，最后创建 ZIP/SHA256 和 GitHub Release。
 
-1. 启动前备份。
-2. 执行 migration。
-3. migration 失败则停止启动并保留原数据。
-4. 不允许通过删除 `app.db` 解决升级问题。
+## 数据与升级
 
-## GitHub Release 自动发布
-
-仓库使用 `.github/workflows/release.yml` 构建 Windows 发布包。
-
-### 推荐方式：推送版本 Tag
-
-```bash
-git tag v0.1.0
-git push origin v0.1.0
-```
-
-Action 会在 `windows-latest` 上自动：
-
-1. 安装 Python 3.12 和项目依赖。
-2. 运行完整单元测试。
-3. 使用 PyInstaller 构建 `PDD运营助手`。
-4. 压缩为 `PDD-AI-Operator-v0.1.0-windows-x64.zip`。
-5. 生成对应 SHA256 校验文件。
-6. 创建 GitHub Release，并上传 ZIP 和校验文件。
-
-### 手动发布
-
-也可以在 GitHub 的 **Actions -> Release Windows -> Run workflow** 中填写 `v0.1.0` 形式的 Tag。若该 Tag 尚不存在，工作流会把它创建在当前选择的提交上，然后发布 Release。
-
-Tag 必须符合 `vMAJOR.MINOR.PATCH`，预发布版本可使用 `v0.1.0-beta.1`。包含 `-` 后缀的版本会自动标记为 prerelease。
-
-## 用户升级与数据
-
-发布包不内置或覆盖 `data/` 中的 SQLite 数据。用户升级时应保留原有 `data/` 目录；正式加入自动更新前，不应设计任何会在升级时删除数据库的流程。
+运行数据仍位于 `data/`。发布包不得携带开发者自己的数据库、Key 或 Token。用户升级必须保留原 `data/`。公开稳定版前 schema 变化必须加入 migration。

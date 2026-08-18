@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api.ai import router as ai_router
@@ -30,7 +30,7 @@ async def lifespan(_app: FastAPI):
 
 
 settings = get_settings()
-app = FastAPI(title=settings.app_name, version="0.3.0", lifespan=lifespan)
+app = FastAPI(title=settings.app_name, version="0.4.0", lifespan=lifespan)
 app.include_router(health_router, prefix="/api")
 app.include_router(ai_router, prefix="/api")
 app.include_router(data_router, prefix="/api")
@@ -40,9 +40,33 @@ app.include_router(sync_router, prefix="/api")
 app.include_router(workspace_router, prefix="/api")
 
 static_dir = Path(__file__).resolve().parent / "static"
-app.mount("/static", StaticFiles(directory=static_dir), name="static")
+assets_dir = static_dir / "assets"
+app.mount("/assets", StaticFiles(directory=assets_dir, check_dir=False), name="frontend-assets")
+
+
+def _frontend_index():
+    index_file = static_dir / "index.html"
+    if index_file.exists():
+        return FileResponse(index_file)
+    return HTMLResponse(
+        """
+        <!doctype html><html lang="zh-CN"><meta charset="utf-8">
+        <title>前端尚未构建</title>
+        <body style="font-family:sans-serif;padding:40px">
+        <h2>Vue 前端尚未构建</h2>
+        <p>开发环境请在 frontend 目录运行 npm install && npm run dev。</p>
+        <p>正式 Windows Release 会在 GitHub Actions 中自动构建前端。</p>
+        </body></html>
+        """,
+        status_code=503,
+    )
 
 
 @app.get("/", include_in_schema=False)
-def index() -> FileResponse:
-    return FileResponse(static_dir / "index.html")
+def index():
+    return _frontend_index()
+
+
+@app.get("/{full_path:path}", include_in_schema=False)
+def spa_fallback(full_path: str):
+    return _frontend_index()

@@ -1,64 +1,71 @@
 # 前端 UI 架构
 
-## 原则
+## 当前技术栈
 
-前端虽然不引入 Node 构建链，但必须按功能模块组织，不允许把页面、API、状态、格式化、组件和业务逻辑全部堆在一个 `app.js` 或一个 CSS 文件中。
+前端统一采用 Vue 3、Vite、Vue Router、Pinia 和原生 Fetch API。Node.js/npm 是开发与构建依赖，不是最终用户运行依赖。Windows Release 构建时由 GitHub Actions 生成 `app/static/`，随后由 PyInstaller 一并打包。
 
-## 目录
+## 为什么迁移到 Vue
+
+原生 HTML + ES Modules 适合早期 MVP，但随着 Dashboard、SKU 诊断、同步中心、AI 工作台、设置和详情抽屉增长，页面状态、路由、组件复用和跨页面数据刷新需要明确的组件模型和状态管理。
+
+## 源码目录
 
 ```text
-app/static/
+frontend/
 ├── index.html
-├── css/
-│   ├── base.css
-│   ├── layout.css
-│   ├── components.css
-│   └── pages.css
-└── js/
-    ├── app.js
-    ├── state.js
-    ├── onboarding.js
-    ├── core/
-    │   ├── api.js
-    │   ├── dom.js
-    │   └── format.js
+├── package.json
+├── vite.config.js
+└── src/
+    ├── main.js
+    ├── App.vue
+    ├── router/
+    ├── stores/
+    ├── api/
+    ├── layouts/
+    ├── views/
     ├── components/
-    │   ├── shell.js
-    │   ├── sku-drawer.js
-    │   └── sync-watch.js
-    └── pages/
-        ├── dashboard.js
-        ├── skus.js
-        ├── studio.js
-        ├── settings.js
-        └── data/
-            ├── index.js
-            ├── sync-center.js
-            ├── capability-probe.js
-            ├── report-import.js
-            └── demo-data.js
+    │   ├── data/
+    │   └── diagnosis/
+    └── styles/
 ```
 
-## 模块职责
+## 页面路由
 
-- `core/`：无业务状态的 HTTP、DOM、格式化等基础能力。
-- `state.js`：跨页面共享的店铺、Provider 和当前页面状态。
-- `components/`：可复用 UI 组件及跨页面行为，例如 SKU 抽屉和全局同步监听。
-- `pages/`：每个主页面一个独立模块；复杂页面继续使用子目录拆分。
-- `pages/data/`：数据中心已按同步、能力检测、报表导入和演示数据拆分，`index.js` 只做页面组装。
-- `app.js`：只负责启动、路由、页面编排和跨页面数据更新事件，不承载具体业务实现。
-- CSS 按基础、布局、组件和页面样式分层。
+`/dashboard`、`/skus`、`/data`、`/ai`、`/settings` 是独立路由。Vue Router 使用 history 模式，FastAPI 对非 `/api` 路径执行 SPA fallback。
 
-## 约束
+## 分层职责
 
-1. 新增主页面必须新建 `pages/<feature>.js`，禁止把实现直接写进 `app.js`。
-2. 同一个页面包含两个以上可独立测试/维护的工作区时，优先直接建立 `pages/<feature>/` 子目录，而不是等到单文件超过千行再拆。
-3. 通用 HTTP、Toast、格式化、加载状态不得在各页面重复实现。
-4. 页面之间通过 `state.js`、显式参数和浏览器自定义事件协作，不使用散落的全局变量。
-5. 不引入前端打包工具作为普通用户运行依赖；浏览器使用原生 ES Modules。
-6. PyInstaller 必须继续递归打包整个 `app/static/`。
-7. 后台任务状态属于跨页面信息时，应放在独立组件中监听，不得由 Dashboard、SKU 页各自重复实现轮询。
+- `views/`：路由级页面，负责页面编排和页面级生命周期。
+- `components/`：可复用领域组件；复杂领域继续按目录拆分。
+- `api/`：按业务域封装 HTTP 调用，页面禁止散落 URL 与通用错误解析。
+- `stores/`：只保存跨页面共享状态，例如当前店铺、Provider、全局同步状态。
+- `router/`：集中维护主路由和元信息。
 
-## 数据更新事件
+## 构建与运行
 
-当前统一使用 `pdd:data-updated` 事件通知经营数据发生变化。来源包括同步完成、报表导入和演示数据创建。应用入口根据当前页面决定是否刷新 Dashboard/SKU 数据，避免功能模块相互直接调用。
+开发环境：Vite `:5173`，FastAPI `:8765`，Vite `/api` 代理后端。
+
+正式构建：
+
+```text
+frontend npm run build
+        ↓
+app/static/index.html + assets/
+        ↓
+PyInstaller
+        ↓
+Windows Release
+```
+
+`app/static/` 是生成产物，不作为手工维护的源码目录。
+
+## 强制规则
+
+1. 新主页面必须创建独立 `views/*View.vue`。
+2. 复杂页面使用领域组件拆分，不允许把全部功能堆进单个 View。
+3. API 调用必须放入 `src/api/`。
+4. 跨页面状态才进入 Pinia。
+5. 不允许重新把业务实现写入 `index.html`。
+6. 不要求最终用户安装 Node.js。
+7. 修改前端依赖、Vite 输出目录、FastAPI SPA fallback 或 PyInstaller 静态资源路径时，必须同时验证 Release workflow。
+8. 架构规则改变时必须在同一大功能提交中更新本文件和 `AGENTS.md`。
