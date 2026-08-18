@@ -169,7 +169,32 @@ action_priority = min(100, priority_score + boost)
 
 API 必须返回每个 adjustment 的 `code / points / reason`，前端必须可以解释“为什么加分”。
 
-## 5. 修改规则
+## 5. Vue 展示
+
+决策支持组件位于：
+
+```text
+frontend/src/components/decision/
+├── DecisionSupportPanel.vue
+├── ActionPriorityCard.vue
+├── ChangePointPanel.vue
+└── StructureShiftPanel.vue
+```
+
+SKU 详情顺序：
+
+```text
+基础指标
+→ 运营决策支持
+→ 趋势分析
+→ 同商品 SKU 对比
+→ 确定性诊断
+→ AI 建议
+```
+
+Vue 不重新计算变化点、迁移比例或 action_priority，只负责展示 API 结果。
+
+## 6. 修改规则
 
 以下任何变化都必须在同一个大功能提交中同步修改代码、测试和本文：
 

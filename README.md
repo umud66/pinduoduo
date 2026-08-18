@@ -46,14 +46,18 @@ SKU Daily Metric
         ↓
 趋势与同商品 SKU 对比
         ↓
-影响度 / 置信度 / 优先级
+变化点 / 商品内份额迁移候选
+        ↓
+priority_score + 可解释趋势上下文
+        ↓
+action_priority
         ↓
 AI 运营建议
         ↓
 人工执行与后续复盘
 ```
 
-当前 SKU 趋势分析已经支持：
+当前 SKU 分析已经支持：
 
 - 今日 vs 前 7 日平均。
 - 最近 7 日 vs 前 7 日。
@@ -61,6 +65,9 @@ AI 运营建议
 - 同商品 SKU 最近 7 日 GMV 排名和贡献占比。
 - SKU 贡献集中度 HHI。
 - 当前诊断问题连续出现天数。
+- GMV 经营变化点识别。
+- 商品整体稳定时的 SKU 份额迁移/蚕食候选。
+- 不覆盖 `priority_score` 的可解释 `action_priority`。
 - 店铺级下滑 SKU 趋势概览。
 
 ## 前端路由
@@ -106,11 +113,13 @@ scripts/build_unix.sh
 - 数据先标准化，再做诊断，最后交给 LLM 解释。
 - 缺失数据保持 unknown/None，不允许伪造成 0。
 - 比率指标跨天聚合必须使用分子/分母重新计算，禁止简单平均每日百分比。
+- 变化点与 SKU 份额迁移只作为经营证据，不描述成已证明的因果关系。
+- `action_priority` 只能在 `priority_score` 上增加可解释上下文，不允许回写替换历史诊断分数。
 - 拼多多权限不足时仍可通过报表导入继续使用。
 - 用户敏感订单信息默认不发送给 AI Provider。
 - 模型统一走 Provider/Gateway。
 - 提交按“大功能”组织，不按文件机械拆 commit。
-- 架构、数据口径、诊断/趋势规则、发布规则和工程规则变化时，必须在同一功能提交中同步维护文档。
+- 架构、数据口径、诊断/趋势/决策支持规则、发布规则和工程规则变化时，必须在同一功能提交中同步维护文档。
 
 ## 文档
 
@@ -118,8 +127,9 @@ scripts/build_unix.sh
 - `docs/functional-spec.md`：详细功能说明与验收基线。
 - `docs/frontend-migration.md`：Vue 3 迁移决策与验收条件。
 - `docs/ui-architecture.md`：当前 Vue 前端架构与强制约束。
-- `docs/diagnosis-engine.md`：SKU 单日诊断、GMV 拆解、影响度、置信度和优先级。
+- `docs/diagnosis-engine.md`：SKU 单日诊断、GMV 拆解、影响度、置信度和 `priority_score`。
 - `docs/trend-analysis.md`：时间窗口、趋势比较、同商品 SKU 对比、HHI 和异常持续时间口径。
+- `docs/decision-support.md`：GMV 变化点、SKU 份额迁移候选与 `action_priority` 规则。
 - `docs/pdd-sync.md`：拼多多同步与恢复机制。
 - `docs/platform-support.md`：Windows/macOS/Linux 平台支持状态。
 - `docs/deployment.md`：部署原则。

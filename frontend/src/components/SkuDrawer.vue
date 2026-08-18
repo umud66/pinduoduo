@@ -1,9 +1,10 @@
 <script setup>
 import { computed, ref } from 'vue'
-import { getSku, getSkuInsights } from '@/api/workspace.js'
+import { getSku, getSkuDecisionSupport, getSkuInsights } from '@/api/workspace.js'
 import { analyzeDiagnosis, diagnoseSku } from '@/api/diagnosis.js'
 import { useAppStore } from '@/stores/app.js'
 import DiagnosisPanel from '@/components/diagnosis/DiagnosisPanel.vue'
+import DecisionSupportPanel from '@/components/decision/DecisionSupportPanel.vue'
 import PeerComparison from '@/components/insights/PeerComparison.vue'
 import SkuTrendPanel from '@/components/insights/SkuTrendPanel.vue'
 
@@ -12,6 +13,7 @@ const open = ref(false)
 const loading = ref(false)
 const data = ref(null)
 const insights = ref(null)
+const decisionSupport = ref(null)
 const error = ref('')
 const money = (value) => `¥${Number(value || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 const percent = (value) => value === null || value === undefined ? '—' : `${(Number(value) * 100).toFixed(1)}%`
@@ -22,10 +24,16 @@ async function show(id) {
   loading.value = true
   error.value = ''
   insights.value = null
+  decisionSupport.value = null
   try {
-    const [detail, trend] = await Promise.all([getSku(id), getSkuInsights(id)])
+    const [detail, trend, support] = await Promise.all([
+      getSku(id),
+      getSkuInsights(id),
+      getSkuDecisionSupport(id),
+    ])
     data.value = detail
     insights.value = trend
+    decisionSupport.value = support
   } catch (e) {
     error.value = e.message
   } finally {
@@ -37,7 +45,7 @@ async function rerun() {
   if (!data.value?.id) return
   await diagnoseSku(data.value.id)
   await show(data.value.id)
-  toast('诊断与持续性分析已刷新', 'success')
+  toast('诊断、趋势与行动优先级已刷新', 'success')
   window.dispatchEvent(new CustomEvent('pdd:data-updated'))
 }
 
@@ -65,7 +73,7 @@ defineExpose({ show })
         <button class="icon-button" @click="open = false">×</button>
       </header>
       <div class="drawer-content">
-        <div v-if="loading" class="loading-block">正在读取 SKU 诊断与趋势…</div>
+        <div v-if="loading" class="loading-block">正在读取 SKU 诊断、趋势与决策支持…</div>
         <div v-else-if="error" class="empty-state">{{ error }}</div>
         <div v-else-if="data" class="stack">
           <article class="card compact sku-identity-card">
@@ -86,6 +94,7 @@ defineExpose({ show })
             <div class="metric-box"><small>推广 ROI</small><strong>{{ data.latest_metric?.ad_roi === null || data.latest_metric?.ad_roi === undefined ? '—' : Number(data.latest_metric.ad_roi).toFixed(2) }}</strong></div>
           </div>
 
+          <DecisionSupportPanel :data="decisionSupport" />
           <SkuTrendPanel :insights="insights" />
           <PeerComparison v-if="insights" :comparison="insights.peer_comparison" />
           <DiagnosisPanel :diagnosis="data.diagnosis" />
