@@ -8,8 +8,10 @@ from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from app.core.config import get_settings
 
+
 class Base(DeclarativeBase):
     pass
+
 
 def _enable_sqlite_pragmas(dbapi_connection, _connection_record) -> None:
     cursor = dbapi_connection.cursor()
@@ -19,6 +21,7 @@ def _enable_sqlite_pragmas(dbapi_connection, _connection_record) -> None:
     cursor.execute("PRAGMA busy_timeout=5000")
     cursor.close()
 
+
 def build_engine(database_url: str | None = None) -> Engine:
     url = database_url or get_settings().database_url
     connect_args = {"check_same_thread": False} if url.startswith("sqlite") else {}
@@ -27,15 +30,20 @@ def build_engine(database_url: str | None = None) -> Engine:
         event.listen(engine, "connect", _enable_sqlite_pragmas)
     return engine
 
+
 engine = build_engine()
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
 
+
 def init_database() -> None:
+    from app.db import browser_models  # noqa: F401
     from app.db import models  # noqa: F401
     from app.db import optimization_models  # noqa: F401
     from app.db import pdd_auth_models  # noqa: F401
     from app.db import sync_models  # noqa: F401
+
     Base.metadata.create_all(engine)
+
 
 @contextmanager
 def session_scope() -> Generator[Session, None, None]:

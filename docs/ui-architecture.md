@@ -10,7 +10,7 @@
 frontend/src/
 ├── api/             按业务域封装 HTTP
 ├── components/
-│   ├── data/        同步、能力探针、报表导入
+│   ├── data/        同步、能力探针、Browser Data Bridge、报表导入
 │   ├── diagnosis/   确定性诊断展示
 │   ├── insights/    趋势、同商品静态对比
 │   ├── decision/    变化点、结构迁移、action_priority
@@ -37,7 +37,7 @@ frontend/src/
 
 SKU 详情继续按决策、趋势、诊断、优化任务拆分，不在 Drawer 中重复实现算法。
 
-设置页当前拆分：
+设置页：
 
 ```text
 SettingsView.vue
@@ -46,39 +46,56 @@ SettingsView.vue
 └── AI Provider 管理
 ```
 
-`PddAuthorizationSettings.vue` 负责：
+数据中心：
 
 ```text
-开放平台应用 Client ID/Secret/redirect_uri
-→ 发起店铺授权
-→ 授权状态轮询
-→ 本地 callback / 手工 code 开发兜底
-→ refresh
-→ capability probe
-→ 断开本机授权
+DataCenterView.vue
+├── SyncCenter.vue
+├── CapabilityProbe.vue
+├── BrowserDataBridge.vue      实验分支
+└── ReportImport.vue
 ```
 
-普通商家 UI 不再显示“手工填写 Access Token”。
+`BrowserDataBridge.vue` 只负责：
 
-领域样式分别使用 `styles/decision-support.css`、`styles/optimization.css`、`styles/pdd-auth.css`，不继续向全局 `app.css` 无限追加。
+```text
+启动/停止浏览器采集
+显示 Playwright 可用状态
+选择起始 URL / allowlist
+轮询采集会话
+展示脱敏后的响应摘要
+```
+
+它不得直接解析拼多多私有响应为正式订单、SKU、流量或推广指标。正式字段映射只能由 Python Adapter 完成。
+
+领域样式分别使用 `styles/decision-support.css`、`styles/optimization.css`、`styles/pdd-auth.css`、`styles/browser-bridge.css`，不继续向全局 `app.css` 无限追加。
 
 ## 业务与安全边界
 
-Vue 不实现诊断、趋势、决策、复盘或 OAuth Token 交换算法。
+Vue 不实现诊断、趋势、决策、复盘、OAuth Token 交换或浏览器私有响应业务映射。
 
 ```text
-Python 服务统一计算 / 交换 Token
-→ API 只返回脱敏结构化状态
-→ Vue 负责展示和用户交互
+Python 服务统一计算 / Token 交换 / 网络响应过滤与脱敏
+→ API 只返回必要结构化状态
+→ Vue 负责展示和用户主动操作
 ```
 
-Access Token、Refresh Token、Client Secret 不得从 API 回显到 Vue。
+Access Token、Refresh Token、Client Secret、Cookie、Authorization 请求头、密码和验证码不得从 API 回显到 Vue。
+
+Browser Data Bridge UI 默认不请求完整 response body，只展示发现摘要。
 
 ## 构建与运行
 
-开发：Vite `:5173` + FastAPI `:8765`，`/api` 代理后端。
+主线开发：Vite `:5173` + FastAPI `:8765`。
 
-正式：`npm run build -> app/static/ -> PyInstaller -> 多平台 Release`。
+Browser Data Bridge 实验环境额外需要：
+
+```text
+Python optional dependency: playwright
+Chromium browser binary
+```
+
+实验分支尚未把 Chromium 加入正式多平台 Release。正式主线仍保持 `npm run build -> app/static/ -> PyInstaller -> 多平台 Release`。
 
 ## 强制规则
 
@@ -87,9 +104,12 @@ Access Token、Refresh Token、Client Secret 不得从 API 回显到 Vue。
 3. API 调用必须放 `src/api/`。
 4. 跨页面共享状态才进入 Pinia。
 5. 业务公式只能由后端服务实现，Vue 不复制算法。
-6. 拼多多授权 UI 放 `components/settings/`，不得回退成 SettingsView 内的一大段表单逻辑。
-7. 普通商家流程不得要求手工 Access Token；手工 code 只能放开发兜底区域。
-8. 领域样式明显增长时拆独立 CSS，禁止重新形成一个超大 `app.css`。
-9. 不要求最终用户安装 Node.js。
-10. 修改前端依赖、Vite 输出、SPA fallback 或 PyInstaller 静态路径时必须同时验证 Release workflow。
-11. UI 架构或组件职责变化必须在同一大功能提交中更新本文。
+6. 拼多多授权 UI 放 `components/settings/`。
+7. 普通商家流程不得要求手工 Access Token。
+8. Browser Data Bridge UI 放 `components/data/`，不得把 Playwright/网络解析逻辑放进 Vue。
+9. Browser Data Bridge 不显示 Cookie、Authorization、请求体或未经脱敏的 response body。
+10. 领域样式明显增长时拆独立 CSS。
+11. 不允许重新退化为单个超大 `.vue` / `.js` / CSS 文件。
+12. `app/static/` 是 Vite 生成产物，不作为源码手工维护。
+13. Browser 实验正式进入 Release 前必须单独评估 Chromium 体积、平台支持和打包流程。
+14. UI 架构或组件职责变化必须在同一大功能提交中更新本文。

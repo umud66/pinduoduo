@@ -7,5 +7,6 @@ import './styles/app.css'
 import './styles/trends.css'
 import './styles/optimization.css'
 import './styles/pdd-auth.css'
+import './styles/browser-bridge.css'
 
 createApp(App).use(createPinia()).use(router).mount('#app')

@@ -4,7 +4,38 @@
 
 > 当前处于 MVP 开发阶段。拼多多开放平台实际权限以应用审核和店铺授权 scope 为准；曝光、点击、推广等指标不能假定必然可由 API 获取。
 
-## 普通用户体验
+## 当前实验分支
+
+`experiment/browser-data-bridge` 用于验证在无法取得开放平台资质/Token 时，通过**用户可见的持久化 Chromium 浏览器观察商家后台页面自身网络响应**作为备用数据通道。
+
+```text
+用户自行登录商家后台
+        ↓
+页面正常请求数据
+        ↓
+Browser Data Bridge 观察 JSON response
+        ↓
+域名过滤 + 脱敏 + 候选分类
+        ↓
+响应发现层
+        ↓
+后续专用 Adapter
+        ↓
+正式标准模型
+```
+
+该实验不会读取/保存密码、验证码、Cookie、Authorization 请求头或请求体，也不会导出 Cookie 后脱离浏览器伪造后台请求。未知私有响应目前不会直接写入正式订单/SKU/指标表。详细规则见 `docs/browser-data-bridge.md`。
+
+Browser 依赖为可选项：
+
+```bash
+pip install -e ".[dev,browser]"
+playwright install chromium
+```
+
+没有安装 Browser 依赖时，原 OpenAPI、报表、诊断、优化任务功能仍可运行。
+
+## 普通用户主线体验
 
 1. 下载对应操作系统 Release。
 2. Windows 解压运行 `PDD运营助手.exe`；macOS 打开 `PDD运营助手.app`；Linux 解压运行 `PDD-AI-Operator`。
@@ -15,33 +46,22 @@
 
 普通用户不需要手工填写 Access Token，也不需要安装 PostgreSQL、Redis、Docker、Python、Node.js/npm。
 
-## 拼多多授权模型
+## 数据来源策略
 
 ```text
-开放平台应用
-Client ID + Client Secret
-        ↓
-拼多多官方店铺授权页
-        ↓
-商家确认
-        ↓
-code + state
-        ↓
-Token create / refresh
-        ↓
-owner / scope / access_token
-        ↓
-capability probe
-        ↓
-商品 / 订单 / 售后同步
+优先：PDD OpenAPI
+        ↓ 不可用/权限不足
+备用：商家官方导出报表
+        ↓ 实验
+Browser Data Bridge
 ```
 
-当前授权实现状态为 `adapted`：代码已经按现行 OpenAPI SDK 常见协议结构适配，但还没有使用本项目自己的真实审核应用和真实授权店铺把授权 URL、localhost callback、Token refresh、scope 等逐项升级为 `verified`。
+Browser Data Bridge 当前只是实验发现层，不能替代官方 OpenAPI 的稳定性和权限语义。
 
 ## 当前核心工作流
 
 ```text
-PDD API / 商家报表
+PDD API / 商家报表 / 实验 Browser Adapter
         ↓
 SKU Daily Metric
         ↓
@@ -60,8 +80,6 @@ action_priority
 执行并记录
         ↓
 3 / 7 / 14 日指标复盘
-        ↓
-形成可复用运营证据
 ```
 
 ## 前端路由
@@ -70,7 +88,7 @@ action_priority
 /dashboard   经营总览
 /skus        SKU 诊断与趋势工作台
 /tasks       优化任务与效果复盘
-/data        数据中心
+/data        数据中心 / Browser Data Bridge 实验
 /ai          AI 工作台
 /settings    设置 / 拼多多店铺授权
 ```
@@ -79,11 +97,13 @@ action_priority
 
 后端：Python 3.11+、FastAPI、SQLite + SQLAlchemy、httpx、openpyxl、cryptography、PyInstaller。
 
-前端：Vue 3、Vite、Vue Router、Pinia。Node.js/npm 只用于开发和 Release 构建。
+前端：Vue 3、Vite、Vue Router、Pinia。
+
+实验 Browser Data Bridge：Playwright Python + headed Chromium + persistent context。
 
 ## 开发启动
 
-需要 Python 3.11+ 和 Node.js 22+：
+主线开发：
 
 ```bash
 python -m venv .venv
@@ -91,39 +111,42 @@ pip install -e ".[dev]"
 python scripts/dev.py
 ```
 
+Browser 实验：
+
+```bash
+pip install -e ".[dev,browser]"
+playwright install chromium
+python scripts/dev.py
+```
+
 ## 构建与 Release
 
-正式 Release 由 `.github/workflows/release.yml` 在原生 Runner 上构建 Windows x64、Linux x64、macOS arm64、macOS Intel x64。
+正式 Release 仍由 `.github/workflows/release.yml` 构建 Windows x64、Linux x64、macOS arm64、macOS Intel x64。
+
+**Browser Data Bridge 实验尚未进入正式 Release 打包。** 在真实商家验证和体积评估完成前，不把 Chromium 强行加入正式安装包。
 
 ## 设计原则
 
-- 应用身份与店铺授权分开建模；Client ID/Secret 不代表店铺已经授权。
+- 应用身份与店铺授权分开建模。
 - 普通商家不手工维护 Access Token。
 - Token/Secret 加密落库，不回显前端、不写日志。
-- Token 生命周期只使用平台返回字段，不自行假设有效期。
+- Browser 实验不导出 Cookie，不保存登录密码/验证码，不绕过平台访问控制。
+- Browser 私有响应必须经过“发现 -> 稳定验证 -> Adapter -> 测试”后才能进入标准模型。
 - 数据先标准化，再做诊断，最后交给 LLM 解释。
 - 缺失数据保持 unknown/None，不允许伪造成 0。
-- 比率指标跨天必须重新聚合分子/分母。
-- 变化点与 SKU 份额迁移只作为经营证据，不描述成已证明因果。
-- `action_priority` 不回写替换 `priority_score`。
-- 优化复盘只描述执行前后的关联变化。
-- 拼多多权限不足时仍可通过报表导入继续使用。
 - 提交按“大功能”组织，不按文件机械拆 commit。
-- 架构、授权/API、数据口径、诊断/趋势/决策支持/复盘规则、发布规则和工程规则变化时，必须在同一功能提交中同步维护文档。
+- 架构、授权/API、Browser 数据规则、数据口径、诊断/趋势/决策/复盘规则变化时必须同步维护文档。
 
 ## 文档
 
-- `docs/product-discussion.md`：产品与技术讨论纪要。
-- `docs/functional-spec.md`：详细功能说明与验收基线。
-- `docs/frontend-migration.md`：Vue 3 迁移决策。
+- `docs/browser-data-bridge.md`：浏览器网络响应实验架构、安全边界和合并条件。
+- `docs/pdd-authorization.md`：开放平台应用、店铺授权、Token 生命周期。
+- `docs/pdd-sync.md`：拼多多 OpenAPI 同步与恢复机制。
 - `docs/ui-architecture.md`：Vue 前端架构与强制约束。
-- `docs/pdd-authorization.md`：开放平台应用、店铺授权、Token 生命周期与真实验证清单。
-- `docs/pdd-sync.md`：拼多多同步与恢复机制。
 - `docs/diagnosis-engine.md`：确定性诊断与 `priority_score`。
 - `docs/trend-analysis.md`：趋势与同商品比较口径。
 - `docs/decision-support.md`：变化点、份额迁移与 `action_priority`。
-- `docs/optimization-loop.md`：优化任务、执行记录、3/7/14 日复盘和因果边界。
+- `docs/optimization-loop.md`：优化任务与 3/7/14 日复盘。
 - `docs/platform-support.md`：多平台支持状态。
-- `docs/deployment.md`：部署原则。
 - `docs/release.md`：多平台 Release 流程。
 - `AGENTS.md`：后续编码 Agent 工程规则。
