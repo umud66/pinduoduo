@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>拼多多 AI 运营助手</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <p class="eyebrow">LOCAL-FIRST · SQLITE</p>
+      <h1>拼多多 AI 运营助手</h1>
+      <p class="subtitle">把店铺数据、SKU 诊断、AI 分析和图片生成放在一个本地工具里。</p>
+    </header>
+
+    <section class="grid">
+      <article class="card">
+        <span class="step">01</span>
+        <h2>连接店铺</h2>
+        <p>配置拼多多开放平台应用，先运行 API 能力探针，再决定哪些数据自动同步。</p>
+      </article>
+      <article class="card">
+        <span class="step">02</span>
+        <h2>导入经营数据</h2>
+        <p>API 获取不到的曝光、点击、推广等指标，通过后台 Excel/CSV 报表补齐。</p>
+      </article>
+      <article class="card">
+        <span class="step">03</span>
+        <h2>诊断 SKU</h2>
+        <p>程序先完成指标和异常判断，再将结构化诊断结果交给大模型解释与给方案。</p>
+      </article>
+      <article class="card">
+        <span class="step">04</span>
+        <h2>生成素材</h2>
+        <p>通过 OpenAI Compatible 网关接入文本、视觉和图片模型，支持各种中转站。</p>
+      </article>
+    </section>
+
+    <section class="status card">
+      <div>
+        <p class="eyebrow">SYSTEM STATUS</p>
+        <h2 id="status-title">正在检查本地服务…</h2>
+      </div>
+      <pre id="status-json"></pre>
+    </section>
+  </main>
+  <script src="/static/app.js"></script>
+</body>
+</html>
