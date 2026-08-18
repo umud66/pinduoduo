@@ -5,5 +5,6 @@ import router from './router/index.js'
 import './styles/base.css'
 import './styles/app.css'
 import './styles/trends.css'
+import './styles/optimization.css'
 
 createApp(App).use(createPinia()).use(router).mount('#app')

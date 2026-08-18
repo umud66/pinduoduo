@@ -7,6 +7,7 @@ import DiagnosisPanel from '@/components/diagnosis/DiagnosisPanel.vue'
 import DecisionSupportPanel from '@/components/decision/DecisionSupportPanel.vue'
 import PeerComparison from '@/components/insights/PeerComparison.vue'
 import SkuTrendPanel from '@/components/insights/SkuTrendPanel.vue'
+import CreateOptimizationTask from '@/components/optimization/CreateOptimizationTask.vue'
 
 const app = useAppStore()
 const open = ref(false)
@@ -98,8 +99,10 @@ defineExpose({ show })
           <SkuTrendPanel :insights="insights" />
           <PeerComparison v-if="insights" :comparison="insights.peer_comparison" />
           <DiagnosisPanel :diagnosis="data.diagnosis" />
+          <CreateOptimizationTask :diagnosis="data.diagnosis" />
 
           <div class="sticky-actions">
+            <RouterLink class="button ghost" to="/tasks">查看优化任务</RouterLink>
             <button class="button secondary" @click="rerun">重新诊断</button>
             <button v-if="app.providers.length" class="button primary" @click="ai">生成 AI 建议</button>
           </div>

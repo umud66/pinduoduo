@@ -13,7 +13,8 @@ frontend/src/
 │   ├── data/        同步、能力探针、报表导入
 │   ├── diagnosis/   确定性诊断展示
 │   ├── insights/    趋势、同商品静态对比
-│   └── decision/    变化点、结构迁移、action_priority
+│   ├── decision/    变化点、结构迁移、action_priority
+│   └── optimization/优化任务、执行记录、复盘时间线
 ├── layouts/         页面骨架
 ├── router/          路由
 ├── stores/          跨页面共享状态
@@ -23,7 +24,7 @@ frontend/src/
 
 ## 页面路由
 
-`/dashboard`、`/skus`、`/data`、`/ai`、`/settings` 是独立路由。Vue Router 使用 history 模式，FastAPI 对非 `/api` 路径执行 SPA fallback。
+`/dashboard`、`/skus`、`/tasks`、`/data`、`/ai`、`/settings` 是独立路由。Vue Router 使用 history 模式，FastAPI 对非 `/api` 路径执行 SPA fallback。
 
 ## 分层职责
 
@@ -40,55 +41,41 @@ SkuDrawer.vue
 ├── components/decision/DecisionSupportPanel.vue
 ├── components/insights/SkuTrendPanel.vue
 ├── components/insights/PeerComparison.vue
-└── components/diagnosis/DiagnosisPanel.vue
+├── components/diagnosis/DiagnosisPanel.vue
+└── components/optimization/CreateOptimizationTask.vue
 ```
 
-决策支持继续拆分：
+优化闭环：
 
 ```text
-components/decision/
-├── DecisionSupportPanel.vue      只负责组合
-├── ActionPriorityCard.vue        行动优先级与加分依据
-├── ChangePointPanel.vue          GMV 变化点
-└── StructureShiftPanel.vue       商品内 SKU 份额迁移候选
+views/OptimizationTasksView.vue
+└── components/optimization/
+    ├── TaskCard.vue               单条任务状态与操作
+    └── ReviewTimeline.vue         3/7/14 日复盘
+
+SkuDrawer.vue
+└── CreateOptimizationTask.vue     从诊断动作创建任务
 ```
 
-领域样式使用 `styles/decision-support.css`，不继续向全局 `app.css` 无限追加。
+领域样式分别使用 `styles/decision-support.css`、`styles/optimization.css`，不继续向全局 `app.css` 无限追加。
 
 ## 业务计算边界
 
-Vue 不实现诊断、趋势和决策公式。
-
-错误做法：
-
-```text
-Vue 自己计算 CTR / HHI / 变化点 / action_priority / 蚕食判断
-```
-
-正确做法：
+Vue 不实现诊断、趋势、决策和复盘公式。
 
 ```text
 Python 服务统一计算
 → API 返回结构化结果
-→ Vue 负责展示、交互和状态
+→ Vue 负责展示、选择动作、记录执行内容和状态操作
 ```
 
-这样 Dashboard、SKU 详情、AI Prompt 和后续任务系统不会出现不同计算口径。
+优化任务页面可以触发 `start / complete / cancel / refresh`，但不得自行计算执行前后指标、`effect_score` 或复盘 `outcome`。
 
 ## 构建与运行
 
 开发：Vite `:5173` + FastAPI `:8765`，`/api` 代理后端。
 
-正式：
-
-```text
-npm run build
-→ app/static/
-→ PyInstaller
-→ 多平台 Release
-```
-
-`app/static/` 是生成产物，不作为手工维护源码。
+正式：`npm run build -> app/static/ -> PyInstaller -> 多平台 Release`。
 
 ## 强制规则
 
@@ -97,7 +84,8 @@ npm run build
 3. API 调用必须放 `src/api/`。
 4. 跨页面共享状态才进入 Pinia。
 5. 业务公式只能由后端服务实现，Vue 不复制算法。
-6. 领域样式明显增长时拆独立 CSS，禁止重新形成一个超大 `app.css`。
-7. 不要求最终用户安装 Node.js。
-8. 修改前端依赖、Vite 输出、SPA fallback 或 PyInstaller 静态路径时必须同时验证 Release workflow。
-9. UI 架构或组件职责变化必须在同一大功能提交中更新本文。
+6. 优化任务、执行记录、复盘 UI 统一放 `components/optimization/`，不要堆回 SKU Drawer。
+7. 领域样式明显增长时拆独立 CSS，禁止重新形成一个超大 `app.css`。
+8. 不要求最终用户安装 Node.js。
+9. 修改前端依赖、Vite 输出、SPA fallback 或 PyInstaller 静态路径时必须同时验证 Release workflow。
+10. UI 架构或组件职责变化必须在同一大功能提交中更新本文。

@@ -10,7 +10,7 @@ const route = useRoute()
 const app = useAppStore()
 const sync = useSyncStore()
 const nav = [
-  ['/dashboard', '经营总览'], ['/skus', 'SKU 诊断'], ['/data', '数据中心'], ['/ai', 'AI 工作台'], ['/settings', '设置'],
+  ['/dashboard', '经营总览'], ['/skus', 'SKU 诊断'], ['/tasks', '优化任务'], ['/data', '数据中心'], ['/ai', 'AI 工作台'], ['/settings', '设置'],
 ]
 const syncLabel = computed(() => {
   if (!app.selectedShopId) return ['neutral', '未选择店铺']
