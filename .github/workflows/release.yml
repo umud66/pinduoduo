@@ -3,11 +3,12 @@ name: Release Windows
 on:
   push:
     tags:
-      - "v*"
+      - "v[0-9]*"
+      - "[0-9]*"
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag, for example v0.1.0"
+        description: "Release version, for example 1.0.0 or v1.0.0"
         required: true
         type: string
 
@@ -38,15 +39,23 @@ jobs:
         shell: pwsh
         run: |
           if ("${{ github.event_name }}" -eq "workflow_dispatch") {
-            $tag = "${{ inputs.tag }}"
+            $rawTag = "${{ inputs.tag }}"
           } else {
-            $tag = "${{ github.ref_name }}"
+            $rawTag = "${{ github.ref_name }}"
           }
 
-          if ($tag -notmatch '^v[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$') {
-            throw "Invalid release tag '$tag'. Expected vMAJOR.MINOR.PATCH, optionally with a suffix."
+          $rawTag = $rawTag.Trim()
+          if ($rawTag -notmatch '^v?[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$') {
+            throw "Invalid release version '$rawTag'. Expected MAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH, optionally with a suffix."
           }
 
+          if ($rawTag.StartsWith("v")) {
+            $tag = $rawTag
+          } else {
+            $tag = "v$rawTag"
+          }
+
+          Write-Host "Normalized release tag: $tag"
           "tag=$tag" >> $env:GITHUB_OUTPUT
           "archive=PDD-AI-Operator-$tag-windows-x64.zip" >> $env:GITHUB_OUTPUT
 
@@ -110,16 +119,16 @@ jobs:
           }
 
           if (-not $releaseExists) {
-            $args = @(
+            $ghArgs = @(
               "release", "create", $tag,
               "--title", "PDD AI Operator $tag",
               "--generate-notes",
               "--target", "${{ github.sha }}"
             )
             if ($isPrerelease) {
-              $args += "--prerelease"
+              $ghArgs += "--prerelease"
             }
-            gh @args
+            gh @ghArgs
           }
 
           gh release upload $tag "release/$archive" "release/$archive.sha256" --clobber
