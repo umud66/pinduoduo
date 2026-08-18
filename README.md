@@ -64,7 +64,18 @@ python scripts/dev.py
 - 模型层统一走 Provider/Gateway，不在业务代码里绑定单一厂商。
 - 提交以“大功能”为单位，禁止按单文件机械拆 commit。
 
-更详细说明见 `docs/` 与 `AGENTS.md`。
+## 文档
+
+项目设计和产品功能以仓库文档为准：
+
+- [`docs/product-discussion.md`](docs/product-discussion.md)：项目启动阶段的产品与技术讨论纪要，记录关键架构决策、约束、风险和演进方向。
+- [`docs/functional-spec.md`](docs/functional-spec.md)：详细功能说明书，描述模块、流程、数据、验收标准和版本路线。
+- [`docs/architecture.md`](docs/architecture.md)：系统总体架构。
+- [`docs/deployment.md`](docs/deployment.md)：本地部署原则。
+- [`docs/release.md`](docs/release.md)：Windows Release 发布流程。
+- [`AGENTS.md`](AGENTS.md)：所有后续编码 Agent 必须遵循的工程约束。
+
+其中 `product-discussion.md` 用于保存“为什么这样设计”，`functional-spec.md` 用于定义“系统最终应该做什么”。功能或架构发生实质变化时应同步更新对应文档。
 
 ## Release 发布
 
