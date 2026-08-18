@@ -1,0 +1,47 @@
+.diagnosis-panel { display: grid; gap: 14px; }
+.diagnosis-overview { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 18px; padding: 18px; border-radius: 14px; background: linear-gradient(135deg, #fff8f7, #fff); border: 1px solid #f2d6d3; }
+.diagnosis-score { display: grid; align-content: start; justify-items: start; gap: 5px; }
+.diagnosis-score small { color: #7f858e; }
+.diagnosis-score strong { font-size: 42px; line-height: 1; letter-spacing: -1px; }
+.diagnosis-summary h3 { margin: 4px 0 10px; line-height: 1.5; }
+.diagnosis-meta, .diagnosis-tags { display: flex; flex-wrap: wrap; gap: 7px; }
+.diagnosis-meta span, .diagnosis-tags span { padding: 5px 8px; border-radius: 7px; background: #f4f5f7; color: #626873; font-size: 11px; }
+.loss-text { color: #b52d24 !important; background: #fdeceb !important; font-weight: 750; }
+.root-cause-line { margin-top: 11px; padding: 9px 11px; border-left: 3px solid #e02e24; background: #fff; border-radius: 0 8px 8px 0; font-size: 12px; }
+.decomposition-list { display: grid; gap: 9px; }
+.decomposition-row { display: grid; grid-template-columns: 110px minmax(90px, 1fr) 88px; gap: 10px; align-items: center; }
+.decomposition-label { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; }
+.decomposition-label span { color: #7c828b; }
+.factor-bar { height: 8px; border-radius: 99px; background: #eef0f3; overflow: hidden; }
+.factor-bar span { display: block; height: 100%; border-radius: inherit; background: #e02e24; }
+.factor-loss { text-align: right; font-size: 12px; font-weight: 700; }
+.diagnosis-section { display: grid; gap: 10px; }
+.diagnosis-issue-list { display: grid; gap: 10px; }
+.diagnosis-issue { border: 1px solid #e7e9ed; border-left-width: 4px; border-radius: 12px; padding: 15px; background: #fff; }
+.diagnosis-issue.high { border-left-color: #c92e25; }
+.diagnosis-issue.medium { border-left-color: #d89213; }
+.diagnosis-issue.low { border-left-color: #5176b8; }
+.diagnosis-issue header { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.diagnosis-issue h3 { margin: 2px 0 0; }
+.issue-scores { display: flex; align-items: center; gap: 8px; }
+.issue-scores > strong { min-width: 36px; text-align: right; font-size: 22px; }
+.diagnosis-reason { margin: 10px 0; color: #555c66; line-height: 1.65; }
+.diagnosis-evidence { margin: 11px 0; border-top: 1px solid #eef0f2; border-bottom: 1px solid #eef0f2; padding: 9px 0; }
+.diagnosis-evidence summary { cursor: pointer; color: #5f6570; font-size: 12px; font-weight: 700; }
+.evidence-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 9px; }
+.evidence-grid > div { padding: 8px; background: #f8f9fa; border-radius: 8px; }
+.evidence-grid small, .evidence-grid strong { display: block; }
+.evidence-grid small { color: #858b94; margin-bottom: 3px; }
+.action-plan, .validation-plan { margin-top: 12px; }
+.action-plan > strong, .validation-plan > strong { display: block; margin-bottom: 6px; font-size: 12px; }
+.action-plan ol { margin: 0; padding-left: 20px; color: #484f59; line-height: 1.7; }
+.validation-plan > div { display: flex; gap: 6px; flex-wrap: wrap; }
+.validation-plan span { padding: 4px 7px; border-radius: 7px; background: #eef4ff; color: #3f5e92; font-size: 11px; }
+.ai-diagnosis .ai-result { margin-top: 0; }
+@media (max-width: 720px) {
+  .diagnosis-overview { grid-template-columns: 1fr; }
+  .diagnosis-score { grid-template-columns: auto auto; align-items: center; justify-content: start; }
+  .diagnosis-score small { grid-column: 1 / -1; }
+  .decomposition-row { grid-template-columns: 90px minmax(70px, 1fr) 72px; }
+  .evidence-grid { grid-template-columns: 1fr 1fr; }
+}
