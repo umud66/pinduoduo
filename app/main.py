@@ -22,6 +22,7 @@ from app.services.pdd.runner import auto_sync_scheduler, sync_runner
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     init_database()
+    sync_runner.recover_stale_jobs()
     auto_sync_scheduler.start()
     yield
     auto_sync_scheduler.stop()
@@ -29,7 +30,7 @@ async def lifespan(_app: FastAPI):
 
 
 settings = get_settings()
-app = FastAPI(title=settings.app_name, version="0.2.0", lifespan=lifespan)
+app = FastAPI(title=settings.app_name, version="0.3.0", lifespan=lifespan)
 app.include_router(health_router, prefix="/api")
 app.include_router(ai_router, prefix="/api")
 app.include_router(data_router, prefix="/api")

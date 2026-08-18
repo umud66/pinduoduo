@@ -32,12 +32,16 @@ def _decode_stats(value: str | None) -> dict[str, Any]:
 
 
 def _job_payload(job: SyncJob) -> dict[str, Any]:
+    stats = _decode_stats(job.stats_json)
     return {
         "id": job.id,
         "shop_id": job.shop_id,
         "job_type": job.job_type,
         "status": job.status,
-        "stats": _decode_stats(job.stats_json),
+        "stats": stats,
+        "params": stats.get("params") if isinstance(stats.get("params"), dict) else {},
+        "retry_of": stats.get("retry_of"),
+        "retryable": job.status == "failed",
         "error_message": job.error_message,
         "created_at": job.created_at.isoformat() if job.created_at else None,
         "updated_at": job.updated_at.isoformat() if job.updated_at else None,
@@ -73,6 +77,8 @@ def get_sync_status(shop_id: int) -> dict[str, Any]:
             .count()
         )
 
+        latest_success = next((job for job in jobs if job.status == "success"), None)
+        latest_failed = next((job for job in jobs if job.status == "failed"), None)
         return {
             "shop_id": shop_id,
             "configured": bool(
@@ -83,6 +89,8 @@ def get_sync_status(shop_id: int) -> dict[str, Any]:
             "product_count": product_count,
             "sku_count": sku_count,
             "active": any(job.status in ("queued", "running") for job in jobs),
+            "latest_success_job_id": latest_success.id if latest_success else None,
+            "latest_failed_job_id": latest_failed.id if latest_failed else None,
             "cursors": {
                 cursor.resource: {
                     "last_synced_at": cursor.last_synced_at,
@@ -160,6 +168,19 @@ def get_sync_job(job_id: int) -> dict[str, Any]:
         if job is None:
             raise HTTPException(status_code=404, detail="同步任务不存在")
         return _job_payload(job)
+
+
+@router.post("/sync/jobs/{job_id}/retry", status_code=202)
+def retry_sync_job(job_id: int) -> dict[str, Any]:
+    try:
+        new_job_id = sync_runner.retry(job_id)
+        return {"accepted": True, "job_id": new_job_id, "retry_of": job_id}
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.put("/sync/shops/{shop_id}/preference")

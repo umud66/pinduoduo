@@ -44,18 +44,67 @@ def diagnose_latest_sku(sku_id: int) -> dict[str, object]:
         payload["sku_id"] = sku_id
         payload["period_end"] = current_metric.metric_date.isoformat()
         payload["baseline_days"] = len(metrics[1:])
+        diagnosis_json = json.dumps(payload, ensure_ascii=False)
 
-        stored = DiagnosisResult(
-            sku_id=sku_id,
-            period_end=current_metric.metric_date,
-            health_score=result.health_score,
-            severity=result.severity,
-            diagnosis_json=json.dumps(payload, ensure_ascii=False),
+        stored = session.scalar(
+            select(DiagnosisResult)
+            .where(
+                DiagnosisResult.sku_id == sku_id,
+                DiagnosisResult.period_end == current_metric.metric_date,
+            )
+            .order_by(DiagnosisResult.id.desc())
+            .limit(1)
         )
-        session.add(stored)
+        if stored is None:
+            stored = DiagnosisResult(
+                sku_id=sku_id,
+                period_end=current_metric.metric_date,
+                health_score=result.health_score,
+                severity=result.severity,
+                diagnosis_json=diagnosis_json,
+            )
+            session.add(stored)
+        else:
+            changed = stored.diagnosis_json != diagnosis_json
+            stored.health_score = result.health_score
+            stored.severity = result.severity
+            stored.diagnosis_json = diagnosis_json
+            if changed:
+                stored.ai_analysis_json = None
         session.flush()
         payload["diagnosis_id"] = stored.id
         return payload
+
+
+def diagnose_shop_skus(shop_id: int, *, limit: int = 2000) -> dict[str, object]:
+    with session_scope() as session:
+        sku_ids = session.scalars(
+            select(SkuDailyMetric.sku_id)
+            .where(SkuDailyMetric.shop_id == shop_id)
+            .distinct()
+            .order_by(SkuDailyMetric.sku_id)
+            .limit(limit)
+        ).all()
+
+    success = 0
+    skipped = 0
+    errors: list[dict[str, object]] = []
+    for sku_id in sku_ids:
+        try:
+            diagnose_latest_sku(int(sku_id))
+            success += 1
+        except LookupError:
+            skipped += 1
+        except Exception as exc:
+            errors.append({"sku_id": int(sku_id), "error": str(exc)})
+
+    return {
+        "ok": not errors,
+        "total": len(sku_ids),
+        "success": success,
+        "skipped": skipped,
+        "errors": errors[:20],
+    }
 
 
 def build_ai_context(diagnosis_payload: dict[str, object]) -> str:

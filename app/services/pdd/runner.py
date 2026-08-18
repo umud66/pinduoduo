@@ -11,12 +11,47 @@ from sqlalchemy import select
 from app.db.database import session_scope
 from app.db.models import Shop, SyncJob
 from app.db.sync_models import SyncPreference
+from app.services.diagnosis.service import diagnose_shop_skus
 from app.services.pdd.sync import PddSyncService
+
+
+def _decode_stats(value: str | None) -> dict[str, Any]:
+    if not value:
+        return {}
+    try:
+        decoded = json.loads(value)
+        return decoded if isinstance(decoded, dict) else {}
+    except json.JSONDecodeError:
+        return {}
+
+
+def _result_has_changes(value: Any) -> bool:
+    if isinstance(value, dict):
+        for key, nested in value.items():
+            if key in {
+                "created",
+                "updated",
+                "orders",
+                "refunds",
+                "products_created",
+                "products_updated",
+                "skus_created",
+                "skus_updated",
+                "records_relinked",
+            } and isinstance(nested, (int, float)) and nested > 0:
+                return True
+            if _result_has_changes(nested):
+                return True
+    elif isinstance(value, list):
+        return any(_result_has_changes(item) for item in value)
+    return False
 
 
 class SyncRunner:
     def __init__(self, max_workers: int = 2) -> None:
-        self.executor = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="pdd-sync")
+        self.executor = ThreadPoolExecutor(
+            max_workers=max_workers, thread_name_prefix="pdd-sync"
+        )
         self._lock = threading.Lock()
 
     def has_active_job(self, shop_id: int) -> bool:
@@ -31,25 +66,87 @@ class SyncRunner:
             )
             return active is not None
 
-    def submit(self, shop_id: int, job_type: str, **kwargs: Any) -> int:
-        if self.has_active_job(shop_id):
-            raise RuntimeError("该店铺已有同步任务正在运行")
+    def recover_stale_jobs(self) -> int:
+        recovered = 0
         with session_scope() as session:
-            if session.get(Shop, shop_id) is None:
-                raise LookupError("店铺不存在")
-            job = SyncJob(
-                shop_id=shop_id,
-                job_type=job_type,
-                status="queued",
-                stats_json=json.dumps(
-                    {"stage": "queued", "progress": 0}, ensure_ascii=False
-                ),
-            )
-            session.add(job)
-            session.flush()
-            job_id = job.id
+            jobs = session.scalars(
+                select(SyncJob).where(SyncJob.status.in_(("queued", "running")))
+            ).all()
+            for job in jobs:
+                stats = _decode_stats(job.stats_json)
+                stats.update(
+                    {
+                        "stage": "interrupted",
+                        "progress": stats.get("progress", 0),
+                        "recoverable": True,
+                    }
+                )
+                job.status = "failed"
+                job.error_message = "上次程序退出时同步未完成，请点击重试"
+                job.stats_json = json.dumps(stats, ensure_ascii=False, default=str)
+                recovered += 1
+        return recovered
+
+    def submit(
+        self,
+        shop_id: int,
+        job_type: str,
+        *,
+        retry_of: int | None = None,
+        **kwargs: Any,
+    ) -> int:
+        with self._lock:
+            if self.has_active_job(shop_id):
+                raise RuntimeError("该店铺已有同步任务正在运行")
+            with session_scope() as session:
+                if session.get(Shop, shop_id) is None:
+                    raise LookupError("店铺不存在")
+                job = SyncJob(
+                    shop_id=shop_id,
+                    job_type=job_type,
+                    status="queued",
+                    stats_json=json.dumps(
+                        {
+                            "stage": "queued",
+                            "progress": 0,
+                            "params": kwargs,
+                            "retry_of": retry_of,
+                        },
+                        ensure_ascii=False,
+                    ),
+                )
+                session.add(job)
+                session.flush()
+                job_id = job.id
         self.executor.submit(self._execute, job_id, shop_id, job_type, kwargs)
         return job_id
+
+    def retry(self, job_id: int) -> int:
+        with session_scope() as session:
+            job = session.get(SyncJob, job_id)
+            if job is None:
+                raise LookupError("同步任务不存在")
+            if job.status != "failed":
+                raise ValueError("只有失败或中断的同步任务可以重试")
+            stats = _decode_stats(job.stats_json)
+            params = stats.get("params") if isinstance(stats.get("params"), dict) else {}
+            shop_id = job.shop_id
+            job_type = job.job_type
+        return self.submit(
+            shop_id,
+            job_type,
+            retry_of=job_id,
+            **params,
+        )
+
+    def _merge_job_stats(self, job_id: int, **updates: Any) -> None:
+        with session_scope() as session:
+            job = session.get(SyncJob, job_id)
+            if job is None:
+                return
+            stats = _decode_stats(job.stats_json)
+            stats.update(updates)
+            job.stats_json = json.dumps(stats, ensure_ascii=False, default=str)
 
     def _execute(
         self, job_id: int, shop_id: int, job_type: str, kwargs: dict[str, Any]
@@ -59,9 +156,10 @@ class SyncRunner:
             if job is None:
                 return
             job.status = "running"
-            job.stats_json = json.dumps(
-                {"stage": "starting", "progress": 1}, ensure_ascii=False
-            )
+            stats = _decode_stats(job.stats_json)
+            stats.update({"stage": "starting", "progress": 1})
+            job.stats_json = json.dumps(stats, ensure_ascii=False)
+            job.error_message = None
 
         service = PddSyncService(shop_id)
         try:
@@ -84,31 +182,42 @@ class SyncRunner:
             else:
                 raise ValueError(f"未知同步类型: {job_type}")
 
+            diagnosis: dict[str, object] | None = None
+            if job_type != "products" and _result_has_changes(result):
+                self._merge_job_stats(job_id, stage="diagnosis", progress=92)
+                diagnosis = diagnose_shop_skus(shop_id, limit=2000)
+
             with session_scope() as session:
                 job = session.get(SyncJob, job_id)
                 if job:
-                    job.status = "success"
-                    job.stats_json = json.dumps(
+                    stats = _decode_stats(job.stats_json)
+                    stats.update(
                         {
                             "stage": "completed",
                             "progress": 100,
                             "result": result,
-                        },
-                        ensure_ascii=False,
-                        default=str,
+                            "diagnosis": diagnosis,
+                        }
                     )
+                    job.status = "success"
+                    job.stats_json = json.dumps(
+                        stats, ensure_ascii=False, default=str
+                    )
+                    job.error_message = None
         except Exception as exc:
             with session_scope() as session:
                 job = session.get(SyncJob, job_id)
                 if job:
+                    stats = _decode_stats(job.stats_json)
+                    stats.update(
+                        {
+                            "stage": "failed",
+                            "error": str(exc),
+                            "recoverable": True,
+                        }
+                    )
                     job.status = "failed"
-                    current: dict[str, Any] = {}
-                    try:
-                        current = json.loads(job.stats_json or "{}")
-                    except json.JSONDecodeError:
-                        current = {}
-                    current.update({"stage": "failed", "error": str(exc)})
-                    job.stats_json = json.dumps(current, ensure_ascii=False)
+                    job.stats_json = json.dumps(stats, ensure_ascii=False)
                     job.error_message = str(exc)
 
     def shutdown(self) -> None:

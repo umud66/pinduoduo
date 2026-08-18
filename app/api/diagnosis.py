@@ -3,13 +3,16 @@ from __future__ import annotations
 import json
 
 from fastapi import APIRouter, HTTPException, Query
-from sqlalchemy import select
 
 from app.db.database import session_scope
-from app.db.models import DiagnosisResult, Product, Sku
+from app.db.models import DiagnosisResult
 from app.services.ai.gateway import AIGatewayError
 from app.services.ai.service import AIProviderService
-from app.services.diagnosis.service import build_ai_context, diagnose_latest_sku
+from app.services.diagnosis.service import (
+    build_ai_context,
+    diagnose_latest_sku,
+    diagnose_shop_skus,
+)
 
 router = APIRouter(tags=["diagnosis"])
 ai_service = AIProviderService()
@@ -24,33 +27,10 @@ def run_sku_diagnosis(sku_id: int) -> dict[str, object]:
 
 
 @router.post("/diagnosis/shops/{shop_id}/run")
-def run_shop_diagnosis(shop_id: int, limit: int = Query(default=300, ge=1, le=2000)) -> dict[str, object]:
-    with session_scope() as session:
-        sku_ids = session.scalars(
-            select(Sku.id)
-            .join(Product, Sku.product_id == Product.id)
-            .where(Product.shop_id == shop_id)
-            .order_by(Sku.id)
-            .limit(limit)
-        ).all()
-    success = 0
-    skipped = 0
-    errors: list[dict[str, object]] = []
-    for sku_id in sku_ids:
-        try:
-            diagnose_latest_sku(int(sku_id))
-            success += 1
-        except LookupError:
-            skipped += 1
-        except Exception as exc:
-            errors.append({"sku_id": int(sku_id), "error": str(exc)})
-    return {
-        "ok": not errors,
-        "total": len(sku_ids),
-        "success": success,
-        "skipped": skipped,
-        "errors": errors[:20],
-    }
+def run_shop_diagnosis(
+    shop_id: int, limit: int = Query(default=300, ge=1, le=2000)
+) -> dict[str, object]:
+    return diagnose_shop_skus(shop_id, limit=limit)
 
 
 @router.post("/diagnosis/{diagnosis_id}/ai")

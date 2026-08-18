@@ -50,6 +50,10 @@ def _status_text(value: Any) -> str | None:
     return None if value in (None, "") else str(value)
 
 
+def _date_of(value: datetime | None) -> date | None:
+    return value.date() if value else None
+
+
 class PddSyncService:
     def __init__(
         self,
@@ -99,7 +103,9 @@ class PddSyncService:
             )
             return cursor.last_synced_at if cursor else None
 
-    def _set_cursor(self, resource: str, timestamp: int, extra: dict[str, Any] | None = None) -> None:
+    def _set_cursor(
+        self, resource: str, timestamp: int, extra: dict[str, Any] | None = None
+    ) -> None:
         with session_scope() as session:
             cursor = session.scalar(
                 select(SyncCursor).where(
@@ -125,7 +131,13 @@ class PddSyncService:
         while True:
             payload = client.goods_list(page=page, page_size=PAGE_SIZE)
             rows = extract_goods_rows(payload)
-            self._update_job(job_id, stage="products", page=page, discovered=seen + len(rows))
+            self._update_job(
+                job_id,
+                stage="products",
+                progress=10,
+                page=page,
+                discovered=seen + len(rows),
+            )
             if not rows:
                 break
 
@@ -142,10 +154,16 @@ class PddSyncService:
                 skus_updated += result["skus_updated"]
                 seen += 1
 
-            if not page_has_more(payload, page=page, page_size=PAGE_SIZE, row_count=len(rows)):
+            if not page_has_more(
+                payload, page=page, page_size=PAGE_SIZE, row_count=len(rows)
+            ):
                 break
             page += 1
 
+        relinked, affected_dates = relink_unmatched_records(self.shop_id)
+        if affected_dates:
+            rebuild_commerce_metrics(self.shop_id, affected_dates)
+        dimensions_updated = refresh_latest_metric_dimensions(self.shop_id)
         now = int(time.time())
         self._set_cursor("products", now, {"count": seen})
         return {
@@ -154,6 +172,8 @@ class PddSyncService:
             "products_updated": products_updated,
             "skus_created": skus_created,
             "skus_updated": skus_updated,
+            "records_relinked": relinked,
+            "metric_dimensions_updated": dimensions_updated,
         }
 
     def _upsert_product(
@@ -162,7 +182,12 @@ class PddSyncService:
         detail: dict[str, Any],
         raw_payload: dict[str, Any],
     ) -> dict[str, int]:
-        result = {"products_created": 0, "products_updated": 0, "skus_created": 0, "skus_updated": 0}
+        result = {
+            "products_created": 0,
+            "products_updated": 0,
+            "skus_created": 0,
+            "skus_updated": 0,
+        }
         with session_scope() as session:
             platform_goods_id = str(first(detail, "goods_id", default=goods_id))
             product = session.scalar(
@@ -172,17 +197,40 @@ class PddSyncService:
                 )
             )
             if product is None:
-                product = Product(shop_id=self.shop_id, platform_goods_id=platform_goods_id)
+                product = Product(
+                    shop_id=self.shop_id, platform_goods_id=platform_goods_id
+                )
                 session.add(product)
                 session.flush()
                 result["products_created"] += 1
             else:
                 result["products_updated"] += 1
 
-            product.title = str(first(detail, "goods_name", "title", "goods_desc", default=product.title or ""))
-            product.category_id = _status_text(first(detail, "cat_id", "category_id", "goods_category_id"))
-            product.status = _status_text(first(detail, "goods_status", "status", "is_onsale"))
-            product.main_image = _status_text(first(detail, "thumb_url", "goods_image_url", "image_url", "hd_thumb_url", default=product.main_image))
+            product.title = str(
+                first(
+                    detail,
+                    "goods_name",
+                    "title",
+                    "goods_desc",
+                    default=product.title or "",
+                )
+            )
+            product.category_id = _status_text(
+                first(detail, "cat_id", "category_id", "goods_category_id")
+            )
+            product.status = _status_text(
+                first(detail, "goods_status", "status", "is_onsale")
+            )
+            product.main_image = _status_text(
+                first(
+                    detail,
+                    "thumb_url",
+                    "goods_image_url",
+                    "image_url",
+                    "hd_thumb_url",
+                    default=product.main_image,
+                )
+            )
             product.raw_json = _json(raw_payload)
 
             for sku_raw in extract_sku_rows(detail):
@@ -191,7 +239,10 @@ class PddSyncService:
                     continue
                 sku_id = str(raw_sku_id)
                 sku = session.scalar(
-                    select(Sku).where(Sku.product_id == product.id, Sku.platform_sku_id == sku_id)
+                    select(Sku).where(
+                        Sku.product_id == product.id,
+                        Sku.platform_sku_id == sku_id,
+                    )
                 )
                 if sku is None:
                     sku = Sku(product_id=product.id, platform_sku_id=sku_id)
@@ -200,16 +251,40 @@ class PddSyncService:
                 else:
                     result["skus_updated"] += 1
 
-                spec = first(sku_raw, "spec", "spec_key", "specs", "specifications", default="")
+                spec = first(
+                    sku_raw,
+                    "spec",
+                    "spec_key",
+                    "specs",
+                    "specifications",
+                    default="",
+                )
                 sku.sku_name = spec if isinstance(spec, str) else _json(spec)
                 sku.spec_json = _json(spec) if isinstance(spec, (dict, list)) else None
-                sku.image_url = _status_text(first(sku_raw, "thumb_url", "sku_img", "image_url"))
-                sku.price = to_decimal(first(sku_raw, "group_price", "price", "normal_price", "market_price"), integer_is_cents=True)
-                sku.stock = to_int(first(sku_raw, "goods_quantity", "quantity", "stock", "sku_quantity"))
-                sku.status = _status_text(first(sku_raw, "is_onsale", "status", "sku_status"))
+                sku.image_url = _status_text(
+                    first(sku_raw, "thumb_url", "sku_img", "image_url")
+                )
+                sku.price = to_decimal(
+                    first(
+                        sku_raw,
+                        "group_price",
+                        "price",
+                        "normal_price",
+                        "market_price",
+                    ),
+                    integer_is_cents=True,
+                )
+                sku.stock = to_int(
+                    first(sku_raw, "goods_quantity", "quantity", "stock", "sku_quantity")
+                )
+                sku.status = _status_text(
+                    first(sku_raw, "is_onsale", "status", "sku_status")
+                )
         return result
 
-    def sync_historical_orders(self, job_id: int, *, lookback_days: int = 30) -> dict[str, int]:
+    def sync_historical_orders(
+        self, job_id: int, *, lookback_days: int = 30
+    ) -> dict[str, int]:
         client = self._client()
         now = int(time.time())
         start = now - max(1, min(90, lookback_days)) * 86400
@@ -221,31 +296,57 @@ class PddSyncService:
             window_end = min(window_start + 86400 - 1, now)
             page = 1
             while True:
-                payload = client.order_list(start_confirm_at=window_start, end_confirm_at=window_end, page=page, page_size=PAGE_SIZE)
+                payload = client.order_list(
+                    start_confirm_at=window_start,
+                    end_confirm_at=window_end,
+                    page=page,
+                    page_size=PAGE_SIZE,
+                )
                 refs = extract_order_refs(payload)
                 if not refs:
                     break
                 for raw in refs:
                     order_sn = str(first(raw, "order_sn", default=""))
                     detail = raw
-                    if order_sn and not isinstance(first(raw, "goods_list", "item_list", "order_items"), list):
+                    if order_sn and not isinstance(
+                        first(raw, "goods_list", "item_list", "order_items"), list
+                    ):
                         detail = extract_order_detail(client.order_information(order_sn)) or raw
                     result = self._upsert_order(detail)
                     processed += result["processed"]
                     created += result["created"]
                     updated += result["updated"]
                     affected_dates.update(result["dates"])
-                self._update_job(job_id, stage="orders", mode="historical", window_end=window_end, page=page, processed=processed)
-                if not page_has_more(payload, page=page, page_size=PAGE_SIZE, row_count=len(refs)):
+                self._update_job(
+                    job_id,
+                    stage="orders",
+                    progress=45,
+                    mode="historical",
+                    window_end=window_end,
+                    page=page,
+                    processed=processed,
+                )
+                if not page_has_more(
+                    payload, page=page, page_size=PAGE_SIZE, row_count=len(refs)
+                ):
                     break
                 page += 1
             window_start = window_end + 1
 
-        self._set_cursor("orders", now, {"mode": "historical", "lookback_days": lookback_days})
-        rebuild_commerce_metrics(self.shop_id, affected_dates)
-        return {"orders": processed, "created": created, "updated": updated}
+        changed_skus = rebuild_commerce_metrics(self.shop_id, affected_dates)
+        self._set_cursor(
+            "orders", now, {"mode": "historical", "lookback_days": lookback_days}
+        )
+        return {
+            "orders": processed,
+            "created": created,
+            "updated": updated,
+            "affected_skus": len(changed_skus),
+        }
 
-    def sync_incremental_orders(self, job_id: int, *, lookback_days: int = 7) -> dict[str, int]:
+    def sync_incremental_orders(
+        self, job_id: int, *, lookback_days: int = 7
+    ) -> dict[str, int]:
         client = self._client()
         now = int(time.time())
         cursor = self._cursor("orders")
@@ -258,7 +359,12 @@ class PddSyncService:
             window_end = min(window_start + WINDOW_SECONDS - 1, now)
             page = 1
             while True:
-                payload = client.order_increment(start_updated_at=window_start, end_updated_at=window_end, page=page, page_size=PAGE_SIZE)
+                payload = client.order_increment(
+                    start_updated_at=window_start,
+                    end_updated_at=window_end,
+                    page=page,
+                    page_size=PAGE_SIZE,
+                )
                 refs = extract_order_refs(payload)
                 if not refs:
                     break
@@ -274,56 +380,115 @@ class PddSyncService:
                     created += result["created"]
                     updated += result["updated"]
                     affected_dates.update(result["dates"])
-                self._update_job(job_id, stage="orders", mode="incremental", window_end=window_end, page=page, processed=processed)
-                if not page_has_more(payload, page=page, page_size=PAGE_SIZE, row_count=len(refs)):
+                self._update_job(
+                    job_id,
+                    stage="orders",
+                    progress=55,
+                    mode="incremental",
+                    window_end=window_end,
+                    page=page,
+                    processed=processed,
+                )
+                if not page_has_more(
+                    payload, page=page, page_size=PAGE_SIZE, row_count=len(refs)
+                ):
                     break
                 page += 1
             window_start = window_end + 1
 
+        changed_skus = rebuild_commerce_metrics(self.shop_id, affected_dates)
         self._set_cursor("orders", now, {"mode": "incremental"})
-        rebuild_commerce_metrics(self.shop_id, affected_dates)
-        return {"orders": processed, "created": created, "updated": updated}
+        return {
+            "orders": processed,
+            "created": created,
+            "updated": updated,
+            "affected_skus": len(changed_skus),
+        }
 
     def _upsert_order(self, detail: dict[str, Any]) -> dict[str, Any]:
         order_sn = str(first(detail, "order_sn", default="")).strip()
         if not order_sn:
             return {"processed": 0, "created": 0, "updated": 0, "dates": set()}
 
-        paid_at = to_datetime(first(detail, "pay_time", "confirm_time", "created_time", "order_time"))
-        dates = {paid_at.date()} if paid_at else set()
+        paid_at = to_datetime(
+            first(detail, "pay_time", "confirm_time", "created_time", "order_time")
+        )
+        dates: set[date] = set()
+        new_date = _date_of(paid_at)
+        if new_date:
+            dates.add(new_date)
         created = updated = 0
         with session_scope() as session:
-            order = session.scalar(select(Order).where(Order.shop_id == self.shop_id, Order.platform_order_sn == order_sn))
+            order = session.scalar(
+                select(Order).where(
+                    Order.shop_id == self.shop_id,
+                    Order.platform_order_sn == order_sn,
+                )
+            )
             if order is None:
                 order = Order(shop_id=self.shop_id, platform_order_sn=order_sn)
                 session.add(order)
                 session.flush()
                 created = 1
             else:
+                old_date = _date_of(order.paid_at)
+                if old_date:
+                    dates.add(old_date)
                 updated = 1
 
-            order.order_status = _status_text(first(detail, "order_status", "order_status_str", "status"))
-            order.order_amount = to_decimal(first(detail, "order_amount", "pay_amount", "amount"), integer_is_cents=True)
-            order.paid_at = paid_at
+            order.order_status = _status_text(
+                first(detail, "order_status", "order_status_str", "status")
+            )
+            order.order_amount = to_decimal(
+                first(detail, "order_amount", "pay_amount", "amount"),
+                integer_is_cents=True,
+            )
+            order.paid_at = paid_at or order.paid_at
             order.raw_json = _json(detail)
 
-            session.execute(delete(OrderItem).where(OrderItem.order_id == order.id))
-            items = first(detail, "goods_list", "item_list", "order_items", default=[])
-            if not isinstance(items, list):
-                items = []
-            for item in items:
-                if not isinstance(item, dict):
-                    continue
-                platform_sku_id = first(item, "sku_id", "outer_id")
-                sku = self._find_sku(session, platform_sku_id)
-                quantity = to_int(first(item, "goods_count", "quantity", "goods_number")) or 1
-                amount = to_decimal(first(item, "goods_amount", "item_amount", "goods_price", "price"), integer_is_cents=True)
-                if amount is not None and first(item, "goods_amount", "item_amount") in (None, ""):
-                    amount *= quantity
-                session.add(OrderItem(order_id=order.id, sku_id=sku.id if sku else None, platform_sku_id=str(platform_sku_id) if platform_sku_id is not None else None, quantity=quantity, item_amount=amount))
+            raw_items = first(detail, "goods_list", "item_list", "order_items", default=None)
+            if isinstance(raw_items, list) and raw_items:
+                session.execute(delete(OrderItem).where(OrderItem.order_id == order.id))
+                for item in raw_items:
+                    if not isinstance(item, dict):
+                        continue
+                    platform_sku_id = first(item, "sku_id", "outer_id")
+                    sku = self._find_sku(session, platform_sku_id)
+                    quantity = to_int(
+                        first(item, "goods_count", "quantity", "goods_number")
+                    ) or 1
+                    amount = to_decimal(
+                        first(
+                            item,
+                            "goods_amount",
+                            "item_amount",
+                            "goods_price",
+                            "price",
+                        ),
+                        integer_is_cents=True,
+                    )
+                    if amount is not None and first(
+                        item, "goods_amount", "item_amount"
+                    ) in (None, ""):
+                        amount *= quantity
+                    session.add(
+                        OrderItem(
+                            order_id=order.id,
+                            sku_id=sku.id if sku else None,
+                            platform_sku_id=(
+                                str(platform_sku_id)
+                                if platform_sku_id is not None
+                                else None
+                            ),
+                            quantity=quantity,
+                            item_amount=amount,
+                        )
+                    )
         return {"processed": 1, "created": created, "updated": updated, "dates": dates}
 
-    def sync_refunds(self, job_id: int, *, lookback_days: int = 7) -> dict[str, int]:
+    def sync_refunds(
+        self, job_id: int, *, lookback_days: int = 7
+    ) -> dict[str, int]:
         client = self._client()
         now = int(time.time())
         cursor = self._cursor("refunds")
@@ -336,7 +501,12 @@ class PddSyncService:
             window_end = min(window_start + WINDOW_SECONDS - 1, now)
             page = 1
             while True:
-                payload = client.refund_increment(start_updated_at=window_start, end_updated_at=window_end, page=page, page_size=PAGE_SIZE)
+                payload = client.refund_increment(
+                    start_updated_at=window_start,
+                    end_updated_at=window_end,
+                    page=page,
+                    page_size=PAGE_SIZE,
+                )
                 rows = extract_refund_rows(payload)
                 if not rows:
                     break
@@ -345,7 +515,9 @@ class PddSyncService:
                     detail = raw
                     if after_sales_id not in (None, ""):
                         try:
-                            fetched = extract_refund_detail(client.refund_information(after_sales_id))
+                            fetched = extract_refund_detail(
+                                client.refund_information(after_sales_id)
+                            )
                             if fetched:
                                 detail = fetched
                         except Exception:
@@ -355,40 +527,81 @@ class PddSyncService:
                     created += result["created"]
                     updated += result["updated"]
                     affected_dates.update(result["dates"])
-                self._update_job(job_id, stage="refunds", window_end=window_end, page=page, processed=processed)
-                if not page_has_more(payload, page=page, page_size=PAGE_SIZE, row_count=len(rows)):
+                self._update_job(
+                    job_id,
+                    stage="refunds",
+                    progress=82,
+                    window_end=window_end,
+                    page=page,
+                    processed=processed,
+                )
+                if not page_has_more(
+                    payload, page=page, page_size=PAGE_SIZE, row_count=len(rows)
+                ):
                     break
                 page += 1
             window_start = window_end + 1
 
+        changed_skus = rebuild_commerce_metrics(self.shop_id, affected_dates)
         self._set_cursor("refunds", now, {"mode": "incremental"})
-        rebuild_commerce_metrics(self.shop_id, affected_dates)
-        return {"refunds": processed, "created": created, "updated": updated}
+        return {
+            "refunds": processed,
+            "created": created,
+            "updated": updated,
+            "affected_skus": len(changed_skus),
+        }
 
     def _upsert_refund(self, detail: dict[str, Any]) -> dict[str, Any]:
         after_sales_id = first(detail, "after_sales_id", "id")
         if after_sales_id in (None, ""):
             return {"processed": 0, "created": 0, "updated": 0, "dates": set()}
 
-        occurred_at = to_datetime(first(detail, "updated_at", "created_at", "after_sales_create_time", "refund_time"))
-        dates = {occurred_at.date()} if occurred_at else set()
+        occurred_at = to_datetime(
+            first(
+                detail,
+                "updated_at",
+                "created_at",
+                "after_sales_create_time",
+                "refund_time",
+            )
+        )
+        dates: set[date] = set()
+        new_date = _date_of(occurred_at)
+        if new_date:
+            dates.add(new_date)
         created = updated = 0
         with session_scope() as session:
-            refund = session.scalar(select(Refund).where(Refund.shop_id == self.shop_id, Refund.platform_after_sales_id == str(after_sales_id)))
+            refund = session.scalar(
+                select(Refund).where(
+                    Refund.shop_id == self.shop_id,
+                    Refund.platform_after_sales_id == str(after_sales_id),
+                )
+            )
             if refund is None:
-                refund = Refund(shop_id=self.shop_id, platform_after_sales_id=str(after_sales_id))
+                refund = Refund(
+                    shop_id=self.shop_id,
+                    platform_after_sales_id=str(after_sales_id),
+                )
                 session.add(refund)
                 created = 1
             else:
+                old_date = _date_of(refund.occurred_at)
+                if old_date:
+                    dates.add(old_date)
                 updated = 1
 
             platform_sku_id = first(detail, "sku_id", "outer_id")
             sku = self._find_sku(session, platform_sku_id)
-            refund.sku_id = sku.id if sku else None
+            refund.sku_id = sku.id if sku else refund.sku_id
             refund.platform_order_sn = _status_text(first(detail, "order_sn"))
-            refund.refund_status = _status_text(first(detail, "after_sales_status", "refund_status", "status"))
-            refund.refund_amount = to_decimal(first(detail, "refund_amount", "after_sales_amount", "amount"), integer_is_cents=True)
-            refund.occurred_at = occurred_at
+            refund.refund_status = _status_text(
+                first(detail, "after_sales_status", "refund_status", "status")
+            )
+            refund.refund_amount = to_decimal(
+                first(detail, "refund_amount", "after_sales_amount", "amount"),
+                integer_is_cents=True,
+            )
+            refund.occurred_at = occurred_at or refund.occurred_at
             refund.raw_json = _json(detail)
         return {"processed": 1, "created": created, "updated": updated, "dates": dates}
 
@@ -398,30 +611,107 @@ class PddSyncService:
         return session.scalar(
             select(Sku)
             .join(Product, Sku.product_id == Product.id)
-            .where(Product.shop_id == self.shop_id, Sku.platform_sku_id == str(platform_sku_id))
+            .where(
+                Product.shop_id == self.shop_id,
+                Sku.platform_sku_id == str(platform_sku_id),
+            )
             .limit(1)
         )
 
     def sync_full(self, job_id: int, *, lookback_days: int = 30) -> dict[str, Any]:
-        self._update_job(job_id, stage="products", mode="full")
+        self._update_job(job_id, stage="products", progress=5, mode="full")
         products = self.sync_products(job_id)
-        self._update_job(job_id, stage="orders", mode="full")
+        self._update_job(job_id, stage="orders", progress=30, mode="full")
         orders = self.sync_historical_orders(job_id, lookback_days=lookback_days)
-        self._update_job(job_id, stage="refunds", mode="full")
+        self._update_job(job_id, stage="refunds", progress=68, mode="full")
         refunds = self.sync_refunds(job_id, lookback_days=lookback_days)
         return {"products": products, "orders": orders, "refunds": refunds}
 
     def sync_incremental(self, job_id: int) -> dict[str, Any]:
-        self._update_job(job_id, stage="orders", mode="incremental")
+        self._update_job(job_id, stage="orders", progress=10, mode="incremental")
         orders = self.sync_incremental_orders(job_id)
-        self._update_job(job_id, stage="refunds", mode="incremental")
+        self._update_job(job_id, stage="refunds", progress=62, mode="incremental")
         refunds = self.sync_refunds(job_id)
         return {"orders": orders, "refunds": refunds}
 
 
-def rebuild_commerce_metrics(shop_id: int, affected_dates: set[date]) -> None:
+def relink_unmatched_records(shop_id: int) -> tuple[int, set[date]]:
+    relinked = 0
+    affected_dates: set[date] = set()
+    with session_scope() as session:
+        sku_rows = session.execute(
+            select(Sku.id, Sku.platform_sku_id)
+            .join(Product, Sku.product_id == Product.id)
+            .where(Product.shop_id == shop_id)
+        ).all()
+        sku_map = {str(platform_id): sku_id for sku_id, platform_id in sku_rows}
+        if not sku_map:
+            return 0, set()
+
+        items = session.scalars(
+            select(OrderItem)
+            .join(Order, OrderItem.order_id == Order.id)
+            .where(
+                Order.shop_id == shop_id,
+                OrderItem.sku_id.is_(None),
+                OrderItem.platform_sku_id.is_not(None),
+            )
+        ).all()
+        for item in items:
+            sku_id = sku_map.get(str(item.platform_sku_id))
+            if not sku_id:
+                continue
+            item.sku_id = sku_id
+            order = session.get(Order, item.order_id)
+            if order and order.paid_at:
+                affected_dates.add(order.paid_at.date())
+            relinked += 1
+
+        refunds = session.scalars(
+            select(Refund).where(Refund.shop_id == shop_id, Refund.sku_id.is_(None))
+        ).all()
+        for refund in refunds:
+            try:
+                raw = json.loads(refund.raw_json or "{}")
+            except json.JSONDecodeError:
+                raw = {}
+            platform_sku_id = first(raw, "sku_id", "outer_id") if isinstance(raw, dict) else None
+            sku_id = sku_map.get(str(platform_sku_id)) if platform_sku_id not in (None, "") else None
+            if not sku_id:
+                continue
+            refund.sku_id = sku_id
+            if refund.occurred_at:
+                affected_dates.add(refund.occurred_at.date())
+            relinked += 1
+    return relinked, affected_dates
+
+
+def refresh_latest_metric_dimensions(shop_id: int) -> int:
+    updated = 0
+    with session_scope() as session:
+        skus = session.scalars(
+            select(Sku)
+            .join(Product, Sku.product_id == Product.id)
+            .where(Product.shop_id == shop_id)
+        ).all()
+        for sku in skus:
+            metric = session.scalar(
+                select(SkuDailyMetric)
+                .where(SkuDailyMetric.sku_id == sku.id)
+                .order_by(SkuDailyMetric.metric_date.desc())
+                .limit(1)
+            )
+            if metric is None:
+                continue
+            metric.price = sku.price if sku.price is not None else metric.price
+            metric.stock = sku.stock if sku.stock is not None else metric.stock
+            updated += 1
+    return updated
+
+
+def rebuild_commerce_metrics(shop_id: int, affected_dates: set[date]) -> set[int]:
     if not affected_dates:
-        return
+        return set()
 
     min_date = min(affected_dates)
     max_date = max(affected_dates)
@@ -433,12 +723,35 @@ def rebuild_commerce_metrics(shop_id: int, affected_dates: set[date]) -> None:
     gmv: dict[tuple[int, date], Decimal] = defaultdict(lambda: Decimal("0"))
     refund_count: dict[tuple[int, date], int] = defaultdict(int)
     refund_amount: dict[tuple[int, date], Decimal] = defaultdict(lambda: Decimal("0"))
+    changed_sku_ids: set[int] = set()
 
     with session_scope() as session:
+        existing_metrics = session.scalars(
+            select(SkuDailyMetric).where(
+                SkuDailyMetric.shop_id == shop_id,
+                SkuDailyMetric.metric_date >= min_date,
+                SkuDailyMetric.metric_date <= max_date,
+            )
+        ).all()
+        for metric in existing_metrics:
+            if metric.metric_date not in affected_dates:
+                continue
+            metric.order_count = 0
+            metric.sales_qty = 0
+            metric.gmv = Decimal("0")
+            metric.refund_count = 0
+            metric.refund_amount = Decimal("0")
+            changed_sku_ids.add(metric.sku_id)
+
         order_rows = session.execute(
             select(OrderItem, Order)
             .join(Order, OrderItem.order_id == Order.id)
-            .where(Order.shop_id == shop_id, Order.paid_at >= start_dt, Order.paid_at < end_dt, OrderItem.sku_id.is_not(None))
+            .where(
+                Order.shop_id == shop_id,
+                Order.paid_at >= start_dt,
+                Order.paid_at < end_dt,
+                OrderItem.sku_id.is_not(None),
+            )
         ).all()
         for item, order in order_rows:
             if not order.paid_at or item.sku_id is None:
@@ -450,9 +763,15 @@ def rebuild_commerce_metrics(shop_id: int, affected_dates: set[date]) -> None:
             order_sets[key].add(order.id)
             sales_qty[key] += item.quantity or 0
             gmv[key] += Decimal(item.item_amount or 0)
+            changed_sku_ids.add(item.sku_id)
 
         refund_rows = session.scalars(
-            select(Refund).where(Refund.shop_id == shop_id, Refund.occurred_at >= start_dt, Refund.occurred_at < end_dt, Refund.sku_id.is_not(None))
+            select(Refund).where(
+                Refund.shop_id == shop_id,
+                Refund.occurred_at >= start_dt,
+                Refund.occurred_at < end_dt,
+                Refund.sku_id.is_not(None),
+            )
         ).all()
         for refund in refund_rows:
             if not refund.occurred_at or refund.sku_id is None:
@@ -463,10 +782,22 @@ def rebuild_commerce_metrics(shop_id: int, affected_dates: set[date]) -> None:
             key = (refund.sku_id, metric_date)
             refund_count[key] += 1
             refund_amount[key] += Decimal(refund.refund_amount or 0)
+            changed_sku_ids.add(refund.sku_id)
 
-        sku_ids = {key[0] for key in set(order_sets) | set(sales_qty) | set(gmv) | set(refund_count) | set(refund_amount)}
-        sku_map = {sku.id: sku for sku in session.scalars(select(Sku).where(Sku.id.in_(sku_ids or {-1}))).all()}
-        all_keys = set(order_sets) | set(sales_qty) | set(gmv) | set(refund_count) | set(refund_amount)
+        all_keys = (
+            set(order_sets)
+            | set(sales_qty)
+            | set(gmv)
+            | set(refund_count)
+            | set(refund_amount)
+        )
+        sku_ids = {key[0] for key in all_keys}
+        sku_map = {
+            sku.id: sku
+            for sku in session.scalars(
+                select(Sku).where(Sku.id.in_(sku_ids or {-1}))
+            ).all()
+        }
         for sku_id, metric_date in all_keys:
             sku = sku_map.get(sku_id)
             if sku is None:
@@ -474,9 +805,19 @@ def rebuild_commerce_metrics(shop_id: int, affected_dates: set[date]) -> None:
             product = session.get(Product, sku.product_id)
             if product is None:
                 continue
-            metric = session.scalar(select(SkuDailyMetric).where(SkuDailyMetric.sku_id == sku_id, SkuDailyMetric.metric_date == metric_date))
+            metric = session.scalar(
+                select(SkuDailyMetric).where(
+                    SkuDailyMetric.sku_id == sku_id,
+                    SkuDailyMetric.metric_date == metric_date,
+                )
+            )
             if metric is None:
-                metric = SkuDailyMetric(metric_date=metric_date, shop_id=shop_id, product_id=product.id, sku_id=sku_id)
+                metric = SkuDailyMetric(
+                    metric_date=metric_date,
+                    shop_id=shop_id,
+                    product_id=product.id,
+                    sku_id=sku_id,
+                )
                 session.add(metric)
             metric.order_count = len(order_sets.get((sku_id, metric_date), set()))
             metric.sales_qty = sales_qty.get((sku_id, metric_date), 0)
@@ -487,3 +828,5 @@ def rebuild_commerce_metrics(shop_id: int, affected_dates: set[date]) -> None:
                 metric.price = sku.price
             if sku.stock is not None:
                 metric.stock = sku.stock
+            changed_sku_ids.add(sku_id)
+    return changed_sku_ids
