@@ -18,13 +18,6 @@ class PddApiError(RuntimeError):
 
 
 def build_sign(client_secret: str, params: Mapping[str, Any]) -> str:
-    """Build the classic PDD Open Platform request signature.
-
-    The gateway and signing behavior are isolated here intentionally. If PDD changes
-    the authentication mechanism for a specific application type, only this adapter
-    should need to change.
-    """
-
     chunks = [client_secret]
     for key in sorted(params):
         value = params[key]
@@ -57,7 +50,9 @@ class PddClient:
         self.timeout_seconds = timeout_seconds or settings.request_timeout_seconds
         self.transport = transport
 
-    def build_params(self, api_type: str, business_params: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    def build_params(
+        self, api_type: str, business_params: Mapping[str, Any] | None = None
+    ) -> dict[str, Any]:
         params: dict[str, Any] = {
             "type": api_type,
             "client_id": self.credentials.client_id,
@@ -69,13 +64,17 @@ class PddClient:
         for key, value in (business_params or {}).items():
             if value is not None:
                 if isinstance(value, (dict, list, tuple)):
-                    params[key] = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+                    params[key] = json.dumps(
+                        value, ensure_ascii=False, separators=(",", ":")
+                    )
                 else:
                     params[key] = value
         params["sign"] = build_sign(self.credentials.client_secret, params)
         return params
 
-    def call(self, api_type: str, business_params: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    def call(
+        self, api_type: str, business_params: Mapping[str, Any] | None = None
+    ) -> dict[str, Any]:
         params = self.build_params(api_type, business_params)
         with httpx.Client(timeout=self.timeout_seconds, transport=self.transport) as client:
             response = client.post(self.gateway_url, data=params)
@@ -83,10 +82,14 @@ class PddClient:
             payload = response.json()
         if isinstance(payload, dict) and payload.get("error_response"):
             error = payload["error_response"]
-            message = str(error.get("error_msg") or error.get("sub_msg") or "PDD API error")
+            message = str(
+                error.get("error_msg") or error.get("sub_msg") or "PDD API error"
+            )
             raise PddApiError(message, payload=payload)
         if not isinstance(payload, dict):
-            raise PddApiError("PDD API returned a non-object response", payload={"raw": payload})
+            raise PddApiError(
+                "PDD API returned a non-object response", payload={"raw": payload}
+            )
         return payload
 
     def goods_list(self, *, page: int = 1, page_size: int = 20) -> dict[str, Any]:
@@ -94,6 +97,24 @@ class PddClient:
 
     def goods_detail(self, goods_id: int | str) -> dict[str, Any]:
         return self.call("pdd.goods.detail.get", {"goods_id": goods_id})
+
+    def order_list(
+        self,
+        *,
+        start_confirm_at: int,
+        end_confirm_at: int,
+        page: int = 1,
+        page_size: int = 20,
+    ) -> dict[str, Any]:
+        return self.call(
+            "pdd.order.list.get",
+            {
+                "start_confirm_at": start_confirm_at,
+                "end_confirm_at": end_confirm_at,
+                "page": page,
+                "page_size": page_size,
+            },
+        )
 
     def order_increment(
         self,
@@ -113,6 +134,9 @@ class PddClient:
             },
         )
 
+    def order_information(self, order_sn: str) -> dict[str, Any]:
+        return self.call("pdd.order.information.get", {"order_sn": order_sn})
+
     def refund_increment(
         self,
         *,
@@ -129,4 +153,9 @@ class PddClient:
                 "page": page,
                 "page_size": page_size,
             },
+        )
+
+    def refund_information(self, after_sales_id: int | str) -> dict[str, Any]:
+        return self.call(
+            "pdd.refund.information.get", {"after_sales_id": after_sales_id}
         )

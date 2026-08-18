@@ -36,8 +36,8 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False
 
 
 def init_database() -> None:
-    # Import models so SQLAlchemy metadata is populated before create_all.
     from app.db import models  # noqa: F401
+    from app.db import sync_models  # noqa: F401
 
     Base.metadata.create_all(engine)
 

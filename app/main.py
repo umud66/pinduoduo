@@ -12,24 +12,30 @@ from app.api.data import router as data_router
 from app.api.diagnosis import router as diagnosis_router
 from app.api.health import router as health_router
 from app.api.pdd import router as pdd_router
+from app.api.sync import router as sync_router
 from app.api.workspace import router as workspace_router
 from app.core.config import get_settings
 from app.db.database import init_database
+from app.services.pdd.runner import auto_sync_scheduler, sync_runner
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     init_database()
+    auto_sync_scheduler.start()
     yield
+    auto_sync_scheduler.stop()
+    sync_runner.shutdown()
 
 
 settings = get_settings()
-app = FastAPI(title=settings.app_name, version="0.1.0", lifespan=lifespan)
+app = FastAPI(title=settings.app_name, version="0.2.0", lifespan=lifespan)
 app.include_router(health_router, prefix="/api")
 app.include_router(ai_router, prefix="/api")
 app.include_router(data_router, prefix="/api")
 app.include_router(diagnosis_router, prefix="/api")
 app.include_router(pdd_router, prefix="/api")
+app.include_router(sync_router, prefix="/api")
 app.include_router(workspace_router, prefix="/api")
 
 static_dir = Path(__file__).resolve().parent / "static"
