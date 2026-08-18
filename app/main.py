@@ -11,6 +11,7 @@ from app.api.ai import router as ai_router
 from app.api.data import router as data_router
 from app.api.diagnosis import router as diagnosis_router
 from app.api.health import router as health_router
+from app.api.optimization import router as optimization_router
 from app.api.pdd import router as pdd_router
 from app.api.sync import router as sync_router
 from app.api.workspace import router as workspace_router
@@ -30,11 +31,12 @@ async def lifespan(_app: FastAPI):
 
 
 settings = get_settings()
-app = FastAPI(title=settings.app_name, version="0.4.0", lifespan=lifespan)
+app = FastAPI(title=settings.app_name, version="0.5.0", lifespan=lifespan)
 app.include_router(health_router, prefix="/api")
 app.include_router(ai_router, prefix="/api")
 app.include_router(data_router, prefix="/api")
 app.include_router(diagnosis_router, prefix="/api")
+app.include_router(optimization_router, prefix="/api")
 app.include_router(pdd_router, prefix="/api")
 app.include_router(sync_router, prefix="/api")
 app.include_router(workspace_router, prefix="/api")
@@ -55,7 +57,7 @@ def _frontend_index():
         <body style="font-family:sans-serif;padding:40px">
         <h2>Vue 前端尚未构建</h2>
         <p>开发环境请在 frontend 目录运行 npm install && npm run dev。</p>
-        <p>正式 Windows Release 会在 GitHub Actions 中自动构建前端。</p>
+        <p>正式多平台 Release 会在 GitHub Actions 中自动构建前端。</p>
         </body></html>
         """,
         status_code=503,
